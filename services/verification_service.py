@@ -1,5 +1,7 @@
 from config.database import db
 from models.verification import Verification
+from flask_jwt_extended import get_jwt_identity
+from sqlalchemy import func
 
 class VerificationService:
 
@@ -44,3 +46,19 @@ class VerificationService:
     @staticmethod
     def get_all_verifications():
         return Verification.query.all()
+
+
+
+
+    @staticmethod
+    def get_user_verifications():          
+        current_user_id = get_jwt_identity()          
+        verifications = Verification.query.filter_by(            
+            utilisateur_id=current_user_id        
+            ).order_by(Verification.date_verification.desc()).all()          
+        return verifications    
+
+
+    @staticmethod
+    def count_verifications():
+        return db.session.query(func.count(Verification.id)).scalar()    

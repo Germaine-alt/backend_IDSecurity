@@ -1,6 +1,6 @@
 
-from flask import Blueprint, request, jsonify
 from services.face_service import recognize_face as recognize_face_service
+from flask import Blueprint, request, jsonify
 
 
 face_bp = Blueprint('face', __name__)

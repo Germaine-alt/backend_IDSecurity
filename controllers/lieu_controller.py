@@ -51,3 +51,12 @@ def delete_lieu(id):
     return jsonify({"message": "Le lieu a été supprimer avec succes"}), 200
 
 
+
+@lieu_bp.route("/count_lieux", methods=["GET"])
+@jwt_required()
+def count_lieux():
+    total = LieuService.count_lieux()
+    return jsonify({
+        "message" : "Nombre total de lieux",
+        "total" : total
+    }),200

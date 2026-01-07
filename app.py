@@ -128,5 +128,5 @@ if __name__ == "__main__":
 
         load_embeddings()
         
-    app.run(debug=True, use_reloader=False, port=8000)
+    app.run(host="0.0.0.0", debug=True, use_reloader=False, port=8000)
 

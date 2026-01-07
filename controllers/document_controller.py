@@ -1,5 +1,5 @@
-from flask import Blueprint,jsonify, request
 from services.document_service import DocumentService
+from flask import Blueprint,jsonify, request
 from flask_jwt_extended import jwt_required
 
 document_bp = Blueprint("document", __name__)

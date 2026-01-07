@@ -8,6 +8,7 @@ from functools import lru_cache
 import logging
 from .image_preprocessing import preprocess_for_ocr
 from .text_utils import clean_text_for_matching, contains_digits, normalize_date_str
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -19,19 +20,44 @@ class OCRService:
         self.reader = easyocr.Reader(langs, gpu=use_gpu)
         logger.info("EasyOCR prêt.")
         # cache des documents en mémoire pour éviter hits DB répétés
-        self._docs_cache = None
 
-    def _load_documents(self, DocumentModel):
-        """
-        Charge la table Document en mémoire (cache).
-        DocumentModel doit être le modèle SQLAlchemy.
-        """
-        if self._docs_cache is None:
-            logger.info("Chargement des documents en cache...")
-            self._docs_cache = DocumentModel.query.all()
-            logger.info("Documents chargés: %d", len(self._docs_cache))
-        return self._docs_cache
+    from sqlalchemy import select
 
+    def _load_documents(self, db, DocumentModel):
+        logger.info("Chargement des documents (safe mode)...")
+
+        rows = db.session.execute(
+            select(
+                DocumentModel.id,
+                DocumentModel.numero_document,
+                DocumentModel.nom,
+                DocumentModel.prenom,
+                DocumentModel.nationalite,
+                DocumentModel.date_de_naissance,
+                DocumentModel.date_d_expiration,
+                DocumentModel.sexe
+            )
+        ).all()
+
+        documents = []
+        for r in rows:
+            documents.append({
+                "id": r.id,
+                "numero_document": r.numero_document,
+                "nom": r.nom,
+                "prenom": r.prenom,
+                "nationalite": r.nationalite,
+                "date_de_naissance": r.date_de_naissance,
+                "date_d_expiration": r.date_d_expiration,
+                "sexe": r.sexe
+            })
+
+        logger.info("Documents chargés: %d", len(documents))
+        return documents
+
+        
+    
+    
     def process_image(self, image_path: str, preprocess: bool = True) -> List[Dict[str, Any]]:
         """
         Lance le pipeline OCR sur l'image et renvoie une liste de dicts:
@@ -91,17 +117,11 @@ class OCRService:
         db.session.commit()
         return entry
 
-    def fuzzy_match_document(self, text_detected: str, DocumentModel, threshold: float = 70.0) -> List[Dict[str, Any]]:
-        """
-        Compare le texte détecté avec les documents en base via fuzzy matching pondéré.
-        DocumentModel: modèle SQLAlchemy Document
-        """
+    def fuzzy_match_document(self, text_detected: str, db, DocumentModel, threshold: float = 70.0):
         text_norm = clean_text_for_matching(text_detected)
-        docs = self._load_documents(DocumentModel)
 
-        results = []
+        docs = self._load_documents(db, DocumentModel)
 
-        # définir champs et poids une seule fois
         fields_weights = {
             "numero_document": 2,
             "nom": 3,
@@ -111,39 +131,41 @@ class OCRService:
             "date_d_expiration": 1
         }
 
+        results = []
+
         for doc in docs:
             total_score = 0.0
             total_weight = 0.0
             scores_detail = {}
 
-            # parcourir champs
             for field, weight in fields_weights.items():
-                val = getattr(doc, field, None)
+                val = doc.get(field)
                 if not val:
                     continue
 
                 val_norm = clean_text_for_matching(str(val))
-                # si champ date et l'OCR ne contient pas de chiffres => skip
+
                 if "date" in field and not contains_digits(text_norm):
                     continue
 
                 score = fuzz.token_set_ratio(text_norm, val_norm)
                 scores_detail[field] = score
+
                 total_score += score * weight
                 total_weight += weight
 
-            global_score = (total_score / total_weight) if total_weight > 0 else 0.0
+            global_score = (total_score / total_weight) if total_weight else 0.0
+
             if global_score >= threshold:
                 results.append({
-                    "document_id": doc.id,
-                    "numero_document": doc.numero_document,
-                    "nom": doc.nom,
-                    "prenom": doc.prenom,
-                    "sexe": getattr(doc, "sexe", None),
+                    "document_id": doc["id"],
+                    "numero_document": doc["numero_document"],
+                    "nom": doc["nom"],
+                    "prenom": doc["prenom"],
+                    "sexe": doc.get("sexe"),
                     "scores_detail": scores_detail,
                     "global_similarity_score": round(global_score, 2)
                 })
 
-        # trier par meilleur score
         results.sort(key=lambda x: x["global_similarity_score"], reverse=True)
         return results

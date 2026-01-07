@@ -1,5 +1,6 @@
 from models.lieu import Lieu
 from config.database import db
+from sqlalchemy import func
 
 class LieuService:
     @staticmethod
@@ -37,3 +38,6 @@ class LieuService:
         db.session.commit()
 
 
+    @staticmethod
+    def count_lieux():
+        return db.session.query(func.count(Lieu.id)).scalar()
