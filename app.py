@@ -3,6 +3,7 @@ from flask_jwt_extended import JWTManager
 from config.database import db
 from controllers.auth_controller import auth_bp
 from controllers.face_controller import face_bp
+from controllers.notification_controller import notification_bp
 from controllers.ocr_controller import ocr_bp
 from controllers.role_controller import role_bp
 from controllers.lieu_controller import lieu_bp
@@ -90,6 +91,7 @@ app.register_blueprint(verification_bp, url_prefix="/api/verification")
 app.register_blueprint(admin_bp, url_prefix="/api/admin")
 app.register_blueprint(face_bp, url_prefix="/api/face")
 app.register_blueprint(ocr_bp, url_prefix="/api/ocr")
+app.register_blueprint(notification_bp, url_prefix='/api/notifications')
 
 
 @app.route("/api/uploads/<path:filename>")

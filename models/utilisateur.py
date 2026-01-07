@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from config.database import db
+from models.notification import Notification
 
 class Utilisateur(db.Model):
     __tablename__ = "utilisateurs"
@@ -18,7 +19,7 @@ class Utilisateur(db.Model):
     role = relationship("Role", back_populates="utilisateurs")
     verifications = relationship("Verification", back_populates="utilisateur")
     ocr_results = relationship("OCRResult", back_populates="utilisateur")
-
+    notifications = relationship("Notification", foreign_keys="Notification.utilisateur_id", back_populates="utilisateur")
 
     def to_dict(self):
         return {

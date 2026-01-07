@@ -3,6 +3,8 @@ from models.utilisateur import Utilisateur
 from config.database import db
 from services.mail_service import envoyer_mail_activation
 from services.password_utils import generer_mot_de_passe
+from services.notification_service import NotificationService
+
 
 class UtilisateurService:
     @staticmethod
@@ -132,3 +134,32 @@ class UtilisateurService:
         db.session.commit()
         
         return mot_passe_temp, None
+
+
+
+    @staticmethod
+    def creer_utilisateur(nom, prenom, email, poste, telephone, role_id):
+        user = Utilisateur(
+            nom=nom,
+            prenom=prenom,
+            email=email,
+            telephone=telephone,
+            poste=poste,
+            role_id=role_id,
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        # AJOUTEZ CES LIGNES ⬇️
+        NotificationService.notifier_utilisateurs_avec_permission(
+            permission="activer_utilisateur",
+            titre="Nouvel utilisateur créé",
+            message=f"Un nouvel utilisateur {prenom} {nom} ({email}) a été créé et attend activation.",
+            type_notif="nouveau_utilisateur",
+            utilisateur_concerne_id=user.id
+        )
+        # FIN DE L'AJOUT ⬆️
+        
+        return user
+
+            
