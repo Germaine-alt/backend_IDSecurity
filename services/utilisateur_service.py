@@ -19,6 +19,16 @@ class UtilisateurService:
         )
         db.session.add(user)
         db.session.commit()
+        
+        # AJOUTEZ CES LIGNES ⬇️
+        NotificationService.notifier_utilisateurs_avec_permission(
+            permission="activer_utilisateur",
+            titre="Nouvel utilisateur créé",
+            message=f"Un nouvel utilisateur {prenom} {nom} ({email}) a été créé et attend activation.",
+            type_notif="nouveau_utilisateur",
+            utilisateur_concerne_id=user.id
+        )
+        
         return user
 
     @staticmethod
@@ -135,31 +145,20 @@ class UtilisateurService:
         
         return mot_passe_temp, None
 
-
-
     @staticmethod
-    def creer_utilisateur(nom, prenom, email, poste, telephone, role_id):
-        user = Utilisateur(
-            nom=nom,
-            prenom=prenom,
-            email=email,
-            telephone=telephone,
-            poste=poste,
-            role_id=role_id,
-        )
-        db.session.add(user)
-        db.session.commit()
-        
-        # AJOUTEZ CES LIGNES ⬇️
-        NotificationService.notifier_utilisateurs_avec_permission(
-            permission="activer_utilisateur",
-            titre="Nouvel utilisateur créé",
-            message=f"Un nouvel utilisateur {prenom} {nom} ({email}) a été créé et attend activation.",
-            type_notif="nouveau_utilisateur",
-            utilisateur_concerne_id=user.id
-        )
-        # FIN DE L'AJOUT ⬆️
-        
-        return user
+    def get_statistiques_utilisateurs():
+        total =Utilisateur.query.count()
+        actifs = Utilisateur.query.filter_by(is_active=True).count()
+        inactifs = Utilisateur.query.filter_by(is_active=False).count()
+
+        return{
+            "total": total,
+            "actifs": actifs,
+            "inactifs": inactifs,
+        }
+
+    
+
+
 
             

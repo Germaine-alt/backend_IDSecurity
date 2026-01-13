@@ -1,16 +1,16 @@
 from flask import Flask, jsonify, send_from_directory
 from flask_jwt_extended import JWTManager
 from config.database import db
-from controllers.auth_controller import auth_bp
-from controllers.face_controller import face_bp
-from controllers.notification_controller import notification_bp
-from controllers.ocr_controller import ocr_bp
-from controllers.role_controller import role_bp
-from controllers.lieu_controller import lieu_bp
-from controllers.type_document_controller import type_document_bp
-from controllers.document_controller import document_bp
-from controllers.verification_controller import verification_bp
-from controllers.admin_controller import admin_bp
+from routes.admin_route import admin_bp
+from routes.auth_route import auth_bp
+from routes.document_route import document_bp
+from routes.face_route import face_bp
+from routes.lieu_route import lieu_bp
+from routes.notification_route import notification_bp
+from routes.ocr_route import ocr_bp
+from routes.role_route import role_bp
+from routes.type_document_route import type_document_bp
+from routes.verification_route import verification_bp
 from services.permissions import PERMISSIONS
 from werkzeug.security import generate_password_hash
 from models.utilisateur import Utilisateur
@@ -18,27 +18,24 @@ from models.role import Role
 from services.face_service import load_embeddings
 from flask_cors import CORS
 from flask_migrate import Migrate
-import os
 from flask_mail import Mail
 from extensions import mail
+import os
 
 #**********************************************************************************************************************
 def create_initial_admin():
    
-    # Vérifie si le rôle existe
     super_admin_role = Role.query.filter_by(libelle="Super-admin").first()
     if not super_admin_role:
         super_admin_role = Role(libelle="Super-admin", permissions=PERMISSIONS)
         db.session.add(super_admin_role)
         db.session.commit()
 
-    # Vérifie si l'utilisateur admin existe déjà
     existing_admin = Utilisateur.query.filter_by(email="admin@example.com").first()
     if existing_admin:
         print("Super admin existe déjà.")
         return
 
-    # Crée l'utilisateur admin si inexistant
     admin = Utilisateur(
         nom="Admin",
         prenom="Principal",
@@ -54,7 +51,6 @@ def create_initial_admin():
     db.session.commit()
     print("Super admin créé avec succès.")
 
-
 #**********************************************************************************************************************
 
 app = Flask(__name__)
@@ -68,7 +64,6 @@ app.config["JWT_SECRET_KEY"] = "73e1d1e862c5475a06d587304c0dad516afc17679ab7b45b
 db.init_app(app)
 migrate = Migrate(app, db)
 jwt = JWTManager(app)
-
 
 #*************************************************Configuration du mail***************************************************
 app.config.update(
@@ -93,11 +88,9 @@ app.register_blueprint(face_bp, url_prefix="/api/face")
 app.register_blueprint(ocr_bp, url_prefix="/api/ocr")
 app.register_blueprint(notification_bp, url_prefix='/api/notifications')
 
-
 @app.route("/api/uploads/<path:filename>")
 def images(filename):
     return send_from_directory(os.path.join(base_dir, "uploads"), filename)
-
 
 @app.route("/api/uploads_mobile/<path:filename>")
 def images_mobile(filename):
@@ -106,12 +99,10 @@ def images_mobile(filename):
 @app.route("/api/results/<path:filename>")
 def results_images(filename):
     return send_from_directory(os.path.join(base_dir, "results"), filename)
-
     
 @app.route("/api/health")
 def health_check():
     return jsonify({"message": "API IDSecurity is running", "status": "success"}), 200
-
 
 @app.route("/api/init-embeddings")
 def init_embeddings_route():
@@ -121,7 +112,6 @@ def init_embeddings_route():
         return jsonify({"message": "Embeddings loaded successfully", "status": "success"}), 200
     except Exception as e:
         return jsonify({"error": str(e), "status": "error"}), 500
-
 
 if __name__ == "__main__":
     with app.app_context():

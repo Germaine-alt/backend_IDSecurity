@@ -54,10 +54,7 @@ class OCRService:
 
         logger.info("Documents chargés: %d", len(documents))
         return documents
-
-        
-    
-    
+ 
     def process_image(self, image_path: str, preprocess: bool = True) -> List[Dict[str, Any]]:
         """
         Lance le pipeline OCR sur l'image et renvoie une liste de dicts:
@@ -169,3 +166,35 @@ class OCRService:
 
         results.sort(key=lambda x: x["global_similarity_score"], reverse=True)
         return results
+
+
+
+
+
+    def extract_externe_fields(self, results):
+        """
+        Extraction simple des infos EXTERNE depuis OCR
+        """
+        nom = None
+        prenom = None
+        numero_document = None
+
+        for r in results:
+            txt = r["text"].strip()
+
+            upper = txt.upper()
+
+            if "NOM" in upper and not nom:
+                nom = upper.replace("NOM", "").replace(":", "").strip()
+
+            elif ("PRENOM" in upper or "PRÉNOM" in upper) and not prenom:
+                prenom = upper.replace("PRENOM", "").replace("PRÉNOM", "").replace(":", "").strip()
+
+            elif contains_digits(txt) and len(txt) >= 6 and not numero_document:
+                numero_document = txt
+
+        return {
+            "nom": nom,
+            "prenom": prenom,
+            "numero_document": numero_document
+        }

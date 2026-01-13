@@ -1,9 +1,7 @@
 from services.utilisateur_service import UtilisateurService
 from flask_jwt_extended import jwt_required, get_jwt
 from models.utilisateur import Utilisateur
-from flask import Blueprint, jsonify
-
-admin_bp = Blueprint("admin", __name__)
+from flask import jsonify
 
 
 def permission_required(permission_name):
@@ -20,7 +18,6 @@ def permission_required(permission_name):
     return decorator
 
 
-@admin_bp.route("/utilisateur/<int:user_id>/toggle-activation", methods=["POST"])
 @jwt_required() 
 @permission_required("activer_utilisateur")
 def toggle_user_activation(user_id):
@@ -36,14 +33,25 @@ def toggle_user_activation(user_id):
     }), 404
 
 
-@admin_bp.route("/utilisateur/<int:user_id>/desactiver", methods=["POST"])
 @jwt_required()
 @permission_required("desactiver_utilisateur")
 def desactiver_utilisateur(user_id):
-    user = UtilisateurService.desactiver(user_id)  # désactive toujours
+    user = UtilisateurService.desactiver(user_id)  
     if user:
         return jsonify({
             "message": f"L'utilisateur {user.email} a été désactivé.",
             "user": user.to_dict()
         }), 200
     return jsonify({"message": "Utilisateur introuvable"}), 404
+
+
+
+@jwt_required()
+@permission_required("activer_utilisateur")
+def get_statistiques_utilisateurs():
+    """Endpoint pour récupérer les statistiques des utilisateurs"""
+    stats = UtilisateurService.get_statistiques_utilisateurs()
+    return jsonify({
+        "message": "Statistiques récupérées avec succès",
+        "data": stats
+    }), 200

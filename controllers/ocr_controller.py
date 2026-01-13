@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app, url_for
+from flask import request, jsonify, current_app, url_for
 from services.ocr_service import OCRService
 from services.text_utils import clean_text_for_matching
 from models.document import Document  
@@ -8,7 +8,6 @@ from services.verification_service import VerificationService
 from config.database import db
 import os, json
 
-ocr_bp = Blueprint("ocr", __name__)
 UPLOAD_FOLDER = "public/uploads_mobile"
 RESULT_FOLDER = "public/results"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -16,8 +15,11 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 ocr_service = OCRService(langs=['fr','en','nl','de'], use_gpu=False)
 
-@ocr_bp.route("/re_ocr", methods=["POST"])
+@jwt_required()
 def re_ocr():
+    utilisateur_id = get_jwt_identity()
+    print(f"👤 Utilisateur ID depuis JWT: {utilisateur_id}")
+
     if "image" not in request.files:
         return jsonify(error="Aucun fichier envoyé"), 400
 
@@ -26,22 +28,106 @@ def re_ocr():
     file.save(save_path)
 
     try:
+        # 1️⃣ OCR
         results = ocr_service.process_image(save_path, preprocess=True)
-        annotated = ocr_service.annotate_image(save_path, results, output_dir=RESULT_FOLDER)
-        saved = ocr_service.save_result_to_db(db, OCRResult, file.filename, results, annotated)
 
+        annotated_path = ocr_service.annotate_image(
+            save_path, results, output_dir=UPLOAD_FOLDER
+        )
+
+        original_url = url_for(
+            "images_mobile",
+            filename=file.filename,
+            _external=True
+        )
+
+        annotated_url = url_for(
+            "images_mobile",
+            filename=os.path.basename(annotated_path),
+            _external=True
+        )
+
+        # 2️⃣ TEXTE GLOBAL
+        full_text = " ".join([r["text"] for r in results])
+        max_conf = max([r["confidence"] for r in results]) if results else 0.0
+
+        # 3️⃣ EXTRACTION EXTERNE
+        extracted = ocr_service.extract_externe_fields(results)
+
+        # 4️⃣ OCRResult (PAS DE DOCUMENT)
+        ocr_entry = OCRResult(
+            image_name=file.filename,
+            text_detected=full_text,
+            confidence=max_conf,
+            bbox=json.dumps(results, ensure_ascii=False),
+            annotated_image=annotated_url,
+            document_id=None,              # 🔥 EXTERNE
+            utilisateur_id=utilisateur_id
+        )
+
+        db.session.add(ocr_entry)
+        db.session.commit()
+        db.session.refresh(ocr_entry)
+
+        # 5️⃣ LIEU
+        lieu_id = request.form.get("lieu_id")
+        print(f"📍 Lieu ID reçu: {lieu_id}")
+
+        if not lieu_id:
+            return jsonify({"status": "error", "message": "Lieu non spécifié"}), 400
+
+        lieu_id = int(lieu_id)
+
+        # 6️⃣ VERIFICATION (EXTERNE)
+        verification = VerificationService.save_verification(
+            utilisateur_id=utilisateur_id,
+            lieu_id=lieu_id,
+            document_id=None,              # 🔥 EXTERNE
+            ocr_result_id=ocr_entry.id,
+            resultat_donnee="EXTERNE",
+            resultat_photo="NON_VERIFIE",
+            url_image_echec=original_url
+        )
+
+        # 7️⃣ RÉPONSE
         return jsonify({
             "status": "success",
-            "text_detected": results,
-            "image_annotated": annotated,
-            "db_id": saved.id
+            "type": "externe",
+            "ocr_id": ocr_entry.id,
+            "utilisateur_id": utilisateur_id,
+            "lieu_id": lieu_id,
+            "externe": {
+                "nom": extracted["nom"],
+                "prenom": extracted["prenom"],
+                "numero_document": extracted["numero_document"]
+            },
+            "original_image": original_url,
+            "annotated_image": annotated_url
         })
+
     except Exception as e:
-        current_app.logger.exception("Erreur OCR")
+        db.session.rollback()
+        current_app.logger.exception("Erreur OCR externe")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@ocr_bp.route("/ocr_compare", methods=["POST"])
+
+
+def list_externes():
+    externes = OCRResult.query.filter(OCRResult.document_id == None).order_by(OCRResult.created_at.desc()).all()
+    return jsonify([e.to_dict() for e in externes])
+
+
+
+
+
+
+
+
+
+
+
+
 @jwt_required()
 def ocr_compare():
     utilisateur_id = get_jwt_identity()
@@ -55,15 +141,12 @@ def ocr_compare():
     file.save(save_path)
 
     try:
-        # Process OCR
         results = ocr_service.process_image(save_path, preprocess=True)
 
-        # Save annotated image
         annotated_path = ocr_service.annotate_image(
             save_path, results, output_dir=UPLOAD_FOLDER
         )
 
-        # Build public URLs
         original_url = url_for(
             "images_mobile", 
             filename=file.filename, 
@@ -88,7 +171,6 @@ def ocr_compare():
 
         max_confidence = max([r["confidence"] for r in results]) if results else 0.0
 
-        # Get best document match
         best_document = None
         best_document_id = None
 
@@ -99,7 +181,6 @@ def ocr_compare():
         else:
             print(f"❌ Aucun match trouvé, document_id sera None")
 
-        # Create OCR result entry
         ocr_entry = OCRResult(
             image_name=file.filename,
             text_detected=full_text,
@@ -114,7 +195,6 @@ def ocr_compare():
         db.session.commit()
         db.session.refresh(ocr_entry)
 
-        # ✅ FIX: Only read from request.form for multipart/form-data
         lieu_id = request.form.get("lieu_id")
         print(f"📍 Lieu ID reçu: {lieu_id}")
 
@@ -123,7 +203,6 @@ def ocr_compare():
 
         lieu_id = int(lieu_id)
 
-        # Save verification
         verification = VerificationService.save_verification(
             utilisateur_id=utilisateur_id,
             lieu_id=lieu_id,
@@ -134,7 +213,6 @@ def ocr_compare():
             url_image_echec=f"http://127.0.0.1:8000/api/uploads_mobile/{file.filename}"
         )
             
-        # Build response
         response_data = {
             "status": "success" if matches else "not_found",
             "ocr_id": ocr_entry.id,
@@ -185,3 +263,6 @@ def ocr_compare():
         db.session.rollback()
         current_app.logger.exception("Erreur OCR compare")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+

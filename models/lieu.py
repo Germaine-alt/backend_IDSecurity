@@ -9,7 +9,8 @@ class Lieu(db.Model):
     nom = Column(String(255), nullable=False)         
     longitude = Column(Float)
     latitude = Column(Float)
-
+    site_id = Column(Integer)
+    
     verifications = relationship("Verification", back_populates="lieu")
 
     def to_dict(self):
@@ -17,5 +18,6 @@ class Lieu(db.Model):
             "id": self.id,
             "nom": self.nom,
             "longitude": self.longitude,
-            "latitude":  self.latitude
+            "latitude":  self.latitude,
+            "site_id":  self.site_id   
         }

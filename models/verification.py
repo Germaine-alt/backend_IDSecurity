@@ -41,7 +41,10 @@ class Verification(db.Model):
                 "id": self.lieu.id,
                 "nom": self.lieu.nom,
                 "longitude": self.lieu.longitude,
-                "latitude": self.lieu.latitude
+                "latitude": self.lieu.latitude,
+                "site_id": self.lieu.site_id
+
+
 
             } if self.lieu else None,
             "document": {
