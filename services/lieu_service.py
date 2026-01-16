@@ -70,7 +70,6 @@ class LieuService:
         db.session.add(lieu)
         db.session.commit()
         return lieu
-
     
     @staticmethod
     def get_lieu_by_id(id):

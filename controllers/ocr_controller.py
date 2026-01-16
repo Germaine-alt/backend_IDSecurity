@@ -15,6 +15,7 @@ os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 ocr_service = OCRService(langs=['fr','en','nl','de'], use_gpu=False)
 
+
 @jwt_required()
 def re_ocr():
     utilisateur_id = get_jwt_identity()
@@ -51,18 +52,20 @@ def re_ocr():
         full_text = " ".join([r["text"] for r in results])
         max_conf = max([r["confidence"] for r in results]) if results else 0.0
 
-        # 3️⃣ EXTRACTION EXTERNE
+        # 3️⃣ EXTRACTION EXTERNE (nom et prenom)
         extracted = ocr_service.extract_externe_fields(results)
+        
+        print(f"📝 Extraction: Nom={extracted['nom']}, Prénom={extracted['prenom']}")
 
-        # 4️⃣ OCRResult (PAS DE DOCUMENT)
+        # 4️⃣ SAUVEGARDER DANS OCRResult
         ocr_entry = OCRResult(
             image_name=file.filename,
             text_detected=full_text,
             confidence=max_conf,
             bbox=json.dumps(results, ensure_ascii=False),
-            annotated_image=annotated_url,
-            document_id=None,              # 🔥 EXTERNE
-            utilisateur_id=utilisateur_id
+            annotated_image=annotated_path,
+            nom_externe=extracted['nom'],
+            prenom_externe=extracted['prenom']
         )
 
         db.session.add(ocr_entry)
@@ -78,32 +81,31 @@ def re_ocr():
 
         lieu_id = int(lieu_id)
 
-        # 6️⃣ VERIFICATION (EXTERNE)
-        verification = VerificationService.save_verification(
-            utilisateur_id=utilisateur_id,
-            lieu_id=lieu_id,
-            document_id=None,              # 🔥 EXTERNE
+        # 6️⃣ CRÉER LA VÉRIFICATION
+        # ⚠️ VÉRIFIEZ LES COLONNES EXACTES DE VOTRE MODÈLE Verification
+        from models.verification import Verification
+        
+        # Option A : Si votre modèle a seulement ocr_result_id, lieu_id, utilisateur_id
+        verification = Verification(
             ocr_result_id=ocr_entry.id,
-            resultat_donnee="EXTERNE",
-            resultat_photo="NON_VERIFIE",
-            url_image_echec=original_url
+            lieu_id=lieu_id,
+            utilisateur_id=utilisateur_id
         )
+        
+       
+        db.session.add(verification)
+        db.session.commit()
 
-        # 7️⃣ RÉPONSE
         return jsonify({
             "status": "success",
-            "type": "externe",
             "ocr_id": ocr_entry.id,
-            "utilisateur_id": utilisateur_id,
-            "lieu_id": lieu_id,
-            "externe": {
-                "nom": extracted["nom"],
-                "prenom": extracted["prenom"],
-                "numero_document": extracted["numero_document"]
-            },
+            "nom": extracted['nom'],
+            "prenom": extracted['prenom'],
+            "confidence": max_conf,
             "original_image": original_url,
-            "annotated_image": annotated_url
-        })
+            "annotated_image": annotated_url,
+            "lieu_id": lieu_id
+        }), 200
 
     except Exception as e:
         db.session.rollback()
@@ -113,16 +115,71 @@ def re_ocr():
 
 
 
+@jwt_required()
 def list_externes():
-    externes = OCRResult.query.filter(OCRResult.document_id == None).order_by(OCRResult.created_at.desc()).all()
-    return jsonify([e.to_dict() for e in externes])
-
-
-
-
-
-
-
+    """Liste tous les externes avec lieu et utilisateur"""
+    try:
+        from models.verification import Verification
+        from models.lieu import Lieu
+        from models.utilisateur import Utilisateur
+        
+        # Récupérer le lieu_id depuis les query parameters
+        lieu_id = request.args.get('lieu_id', type=int)
+        
+        print(f"📋 Liste externes - Lieu ID: {lieu_id}")
+        
+        # Query avec jointures
+        query = db.session.query(
+            OCRResult,
+            Lieu,
+            Utilisateur
+        ).join(
+            Verification, OCRResult.id == Verification.ocr_result_id
+        ).join(
+            Lieu, Verification.lieu_id == Lieu.id
+        ).join(
+            Utilisateur, Verification.utilisateur_id == Utilisateur.id
+        ).filter(
+            OCRResult.document_id.is_(None)  # Seulement les externes
+        )
+        
+        # Filtrer par lieu si spécifié
+        if lieu_id:
+            query = query.filter(Verification.lieu_id == lieu_id)
+        
+        # Ordonner par date décroissante
+        results = query.order_by(OCRResult.created_at.desc()).all()
+        
+        print(f"✅ {len(results)} externes trouvés")
+        
+        # Formatter la réponse
+        externes_list = []
+        for ocr, lieu, user in results:
+            externes_list.append({
+                "id": ocr.id,
+                "nom": ocr.nom_externe,
+                "prenom": ocr.prenom_externe,
+                "image_name": ocr.image_name,
+                "confidence": ocr.confidence,
+                "created_at": ocr.created_at.isoformat() if ocr.created_at else None,
+                "lieu": {
+                    "id": lieu.id,
+                    "nom": lieu.nom
+                },
+                "utilisateur": {
+                    "id": user.id,
+                    "nom": user.nom,
+                    "prenom": user.prenom
+                },
+            })
+        
+        return jsonify(externes_list), 200
+        
+    except Exception as e:
+        print(f"❌ Erreur list_externes: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 

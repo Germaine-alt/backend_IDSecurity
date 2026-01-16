@@ -12,7 +12,7 @@ class DocumentService:
     def save_base64_image(base64_string):
         """Sauvegarde une image base64 et retourne le chemin relatif"""
         try:
-            # Vérifier si c'est une image base64
+            
             if not base64_string or not isinstance(base64_string, str):
                 return None
                 

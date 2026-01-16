@@ -16,6 +16,8 @@ class OCRResult(db.Model):
     utilisateur_id = Column(Integer, ForeignKey('utilisateurs.id'))
     document_id = db.Column(db.Integer, db.ForeignKey("documents.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    nom_externe = db.Column(db.String(100), nullable=True)
+    prenom_externe = db.Column(db.String(100), nullable=True)
 
     document = relationship("Document", back_populates="ocr_results")
     utilisateur = relationship("Utilisateur", back_populates="ocr_results")

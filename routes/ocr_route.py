@@ -8,7 +8,7 @@ ocr_bp.route("/re_ocr", methods=["POST"])(
 )
 
 
-ocr_bp.route("/list", methods=["POST"])(
+ocr_bp.route("/list", methods=["GET"])(
     list_externes
 )
 
