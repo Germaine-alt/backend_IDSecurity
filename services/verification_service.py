@@ -62,3 +62,15 @@ class VerificationService:
     @staticmethod
     def count_verifications():
         return db.session.query(func.count(Verification.id)).scalar()    
+
+    @staticmethod
+    def get_statistiques_verifications():
+        total =Verification.query.count()
+        reussis = Verification.query.filter_by(is_active=True).count()
+        echouees = Verification.query.filter_by(is_active=False).count()
+
+        return{
+            "total": total,
+            "reussis": reussis,
+            "echouees": echouees,
+        }    

@@ -19,8 +19,6 @@ class UtilisateurService:
         )
         db.session.add(user)
         db.session.commit()
-        
-        # AJOUTEZ CES LIGNES ⬇️
         NotificationService.notifier_utilisateurs_avec_permission(
             permission="activer_utilisateur",
             titre="Nouvel utilisateur créé",
@@ -28,7 +26,6 @@ class UtilisateurService:
             type_notif="nouveau_utilisateur",
             utilisateur_concerne_id=user.id
         )
-        
         return user
 
     @staticmethod
@@ -39,40 +36,30 @@ class UtilisateurService:
                 return user
         return None
 
-
     @staticmethod
     def basculer_activation(user_id):
         user = Utilisateur.query.get(user_id)
         if not user:
             return None
-
-        # Si on active le compte
         if not user.is_active:
             mot_passe_temp = generer_mot_de_passe()
             user.mot_passe = generate_password_hash(mot_passe_temp)
             user.is_active = True
             db.session.commit()
-
             envoyer_mail_activation(user, mot_passe_temp)
         else:
             user.is_active = False
             db.session.commit()
-
         return user
-
-
 
     @staticmethod
     def get_all_utilisateurs():
         return Utilisateur.query.all()
 
-
     @staticmethod
     def get_user(user_id):
         user = Utilisateur.query.get(user_id)
         return user
-
-
 
     @staticmethod
     def desactiver(user_id):
@@ -82,7 +69,6 @@ class UtilisateurService:
         user.is_active = False
         db.session.commit()
         return user
-
 
     @staticmethod
     def update_utilisateur(user_id, nom=None, prenom=None, email=None, telephone=None, mot_passe=None, poste=None, role_id=None):
@@ -106,9 +92,6 @@ class UtilisateurService:
 
         db.session.commit()
         return user   
-
-
-
     
     @staticmethod
     def changer_mot_de_passe(user_id, ancien_mot_passe, nouveau_mot_passe):
@@ -124,11 +107,9 @@ class UtilisateurService:
         # Vérifier que le nouveau mot de passe est différent de l'ancien
         if check_password_hash(user.mot_passe, nouveau_mot_passe):
             return None, "Le nouveau mot de passe doit être différent de l'ancien"
-        
         # Mettre à jour le mot de passe
         user.mot_passe = generate_password_hash(nouveau_mot_passe)
         db.session.commit()
-        
         return user, None
     
     @staticmethod
@@ -137,12 +118,10 @@ class UtilisateurService:
         user = Utilisateur.query.get(user_id)
         if not user:
             return None, "Utilisateur non trouvé"
-        
         # Générer un nouveau mot de passe temporaire
         mot_passe_temp = generer_mot_de_passe()
         user.mot_passe = generate_password_hash(mot_passe_temp)
         db.session.commit()
-        
         return mot_passe_temp, None
 
     @staticmethod

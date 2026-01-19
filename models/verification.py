@@ -9,8 +9,8 @@ class Verification(db.Model):
     id = Column(Integer, primary_key=True)
     date_verification = Column(DateTime, default=datetime.utcnow)
 
-    resultat_photo = Column(String(50))   # OK / ECHEC / NON_VERIFIE
-    resultat_donnee = Column(String(50))  # OK / ECHEC
+    resultat_photo = Column(String(50))   
+    resultat_donnee = Column(String(50))  
     url_image_echec = Column(String(255), nullable=True)
 
     utilisateur_id = Column(Integer, ForeignKey('utilisateurs.id'), nullable=False)

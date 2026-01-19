@@ -122,11 +122,14 @@ def list_externes():
         from models.verification import Verification
         from models.lieu import Lieu
         from models.utilisateur import Utilisateur
+        from models.utilisateur import Utilisateur
+
         
         # Récupérer le lieu_id depuis les query parameters
+        current_user_id = get_jwt_identity()
         lieu_id = request.args.get('lieu_id', type=int)
         
-        print(f"📋 Liste externes - Lieu ID: {lieu_id}")
+        print(f"📋 Externes - User ID: {current_user_id} | Lieu ID: {lieu_id}")
         
         # Query avec jointures
         query = db.session.query(
@@ -140,15 +143,16 @@ def list_externes():
         ).join(
             Utilisateur, Verification.utilisateur_id == Utilisateur.id
         ).filter(
-            OCRResult.document_id.is_(None)  # Seulement les externes
+            OCRResult.document_id.is_(None),              
+            Verification.utilisateur_id == current_user_id  
         )
-        
-        # Filtrer par lieu si spécifié
+
+        # Filtre par lieu OPTIONNEL
         if lieu_id:
             query = query.filter(Verification.lieu_id == lieu_id)
-        
-        # Ordonner par date décroissante
+
         results = query.order_by(OCRResult.created_at.desc()).all()
+
         
         print(f"✅ {len(results)} externes trouvés")
         
