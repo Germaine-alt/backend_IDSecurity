@@ -35,10 +35,19 @@ def get_mes_verifications():
 
 
 @jwt_required()
-def count_verifications():
-    total = VerificationService.count_verifications()
+def get_statistiques_verifications():
+    stats = VerificationService.get_statistiques_verifications()
     return jsonify({
-        "message" : "Nombre total de verification",
-        "total" : total
-    }),200
+        "message": "Statistiques des vérifications",
+        "statistiques": stats
+    }), 200
+
+
+@jwt_required()
+def get_statistiques_verifications_par_lieu():
+    stats = VerificationService.get_stats_verifications_par_lieu()
+    return jsonify({
+        "message": "Statistiques des vérifications par lieu",
+        "data": stats
+    }), 200
 

@@ -88,26 +88,48 @@ def import_lieux():
             file.save(tmp_file.name)
             filepath = tmp_file.name
         
-        # Lire le fichier selon son type
+                # Lire le fichier selon son type
         if file.filename.lower().endswith('.csv'):
-            df = pd.read_csv(filepath, sep=None, engine='python', encoding='utf-8')
+            try:
+                df = pd.read_csv(
+                    filepath,
+                    sep=';',
+                    encoding='utf-8-sig'
+                )
+            except UnicodeDecodeError:
+                df = pd.read_csv(
+                    filepath,
+                    sep=';',
+                    encoding='latin1'
+                )
         else:
             df = pd.read_excel(filepath)
-        
+
         # Nettoyer les noms de colonnes
-        df.columns = df.columns.str.strip().str.lower()
-        
+        df.columns = (
+            df.columns
+            .str.replace('\ufeff', '', regex=False)
+            .str.strip()
+            .str.lower()
+        )
+
+        print("Colonnes détectées :", list(df.columns))
+
         # Vérifier les colonnes requises
-        required_columns = ['nom', 'longitude', 'latitude', 'site_id']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        
+        required_columns = {'nom', 'longitude', 'latitude', 'site_id'}
+        missing_columns = required_columns - set(df.columns)
+
         if missing_columns:
             return jsonify({
                 "error": f"Colonnes manquantes dans le fichier: {', '.join(missing_columns)}",
-                "colonnes_requises": required_columns,
                 "colonnes_trouvees": list(df.columns)
             }), 400
+
+
         
+
+
+
         # Supprimer les lignes vides
         df = df.dropna(how='all')
         

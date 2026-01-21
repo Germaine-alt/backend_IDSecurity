@@ -15,6 +15,11 @@ verification_bp.route('/mes_verifications', methods=['GET'])(
     get_mes_verifications
 )
 
-verification_bp.route("/count_verifications", methods=["GET"])(
-    count_verifications
+verification_bp.route("/stat", methods=["GET"])(
+    get_statistiques_verifications
+)
+
+
+verification_bp.route("/stat/lieu", methods=["GET"])(
+    get_statistiques_verifications_par_lieu
 )

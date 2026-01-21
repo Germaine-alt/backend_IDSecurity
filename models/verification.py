@@ -2,12 +2,15 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from config.database import db
+from sqlalchemy.sql import func
+
 
 class Verification(db.Model):
     __tablename__ = 'verifications'
 
     id = Column(Integer, primary_key=True)
-    date_verification = Column(DateTime, default=datetime.utcnow)
+    # date_verification = Column(DateTime, default=datetime.utcnow)
+    date_verification = Column(DateTime(timezone=True), server_default=func.now())
 
     resultat_photo = Column(String(50))   
     resultat_donnee = Column(String(50))  
@@ -30,6 +33,10 @@ class Verification(db.Model):
             "resultat_photo": self.resultat_photo,
             "resultat_donnee": self.resultat_donnee,
             "url_image_echec": self.url_image_echec,
+
+            "nom_externe": self.ocr_results.nom_externe if self.ocr_results else None,
+            "prenom_externe": self.ocr_results.prenom_externe if self.ocr_results else None,
+
             "utilisateur": {
                 "id": self.utilisateur.id,
                 "nom": self.utilisateur.nom,
@@ -43,8 +50,6 @@ class Verification(db.Model):
                 "longitude": self.lieu.longitude,
                 "latitude": self.lieu.latitude,
                 "site_id": self.lieu.site_id
-
-
 
             } if self.lieu else None,
             "document": {

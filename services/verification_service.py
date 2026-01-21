@@ -60,17 +60,52 @@ class VerificationService:
 
 
     @staticmethod
-    def count_verifications():
-        return db.session.query(func.count(Verification.id)).scalar()    
+    def get_statistiques_verifications():
+        total = db.session.query(func.count(Verification.id)).scalar()
+
+        reussies = db.session.query(func.count(Verification.id)).filter(
+            Verification.resultat_donnee == "OK"
+        ).scalar()
+
+        echouees = db.session.query(func.count(Verification.id)).filter(
+            Verification.resultat_donnee == "ECHEC"
+        ).scalar()
+
+        externes = db.session.query(func.count(Verification.id)).filter(
+            Verification.resultat_donnee == "EXTERNE"
+        ).scalar()
+
+        return {
+            "total": total,
+            "reussies": reussies,
+            "echouees": echouees,
+            "externes": externes
+        }
+
 
     @staticmethod
-    def get_statistiques_verifications():
-        total =Verification.query.count()
-        reussis = Verification.query.filter_by(is_active=True).count()
-        echouees = Verification.query.filter_by(is_active=False).count()
+    def get_stats_verifications_par_lieu():
+        results = db.session.query(
+            Verification.lieu_id,
+            func.count(Verification.id)
+        ).filter(
+            Verification.lieu_id.isnot(None)
+        ).group_by(
+            Verification.lieu_id
+        ).all()
 
-        return{
-            "total": total,
-            "reussis": reussis,
-            "echouees": echouees,
-        }    
+        data = []
+        for lieu_id, total in results:
+            from models.lieu import Lieu
+            lieu = Lieu.query.get(lieu_id)
+            if lieu:
+                data.append({
+                    "lieu": lieu.nom,
+                    "total": total
+                })
+
+        return data
+
+
+        
+

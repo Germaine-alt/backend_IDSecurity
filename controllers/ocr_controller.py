@@ -7,6 +7,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from services.verification_service import VerificationService
 from config.database import db
 import os, json
+from models.verification import Verification
 
 UPLOAD_FOLDER = "public/uploads_mobile"
 RESULT_FOLDER = "public/results"
@@ -14,6 +15,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
 ocr_service = OCRService(langs=['fr','en','nl','de'], use_gpu=False)
+
 
 
 @jwt_required()
@@ -29,35 +31,23 @@ def re_ocr():
     file.save(save_path)
 
     try:
-        # 1️⃣ OCR
         results = ocr_service.process_image(save_path, preprocess=True)
-
+        
         annotated_path = ocr_service.annotate_image(
             save_path, results, output_dir=UPLOAD_FOLDER
         )
 
-        original_url = url_for(
-            "images_mobile",
-            filename=file.filename,
-            _external=True
-        )
+        annotated_filename = os.path.basename(annotated_path)
 
-        annotated_url = url_for(
-            "images_mobile",
-            filename=os.path.basename(annotated_path),
-            _external=True
-        )
+        original_url = f"http://127.0.0.1:8000/api/uploads_mobile/{file.filename}"
+        annotated_url = f"http://127.0.0.1:8000/api/uploads_mobile/{annotated_filename}"
 
-        # 2️⃣ TEXTE GLOBAL
         full_text = " ".join([r["text"] for r in results])
         max_conf = max([r["confidence"] for r in results]) if results else 0.0
-
-        # 3️⃣ EXTRACTION EXTERNE (nom et prenom)
         extracted = ocr_service.extract_externe_fields(results)
         
         print(f"📝 Extraction: Nom={extracted['nom']}, Prénom={extracted['prenom']}")
 
-        # 4️⃣ SAUVEGARDER DANS OCRResult
         ocr_entry = OCRResult(
             image_name=file.filename,
             text_detected=full_text,
@@ -65,14 +55,14 @@ def re_ocr():
             bbox=json.dumps(results, ensure_ascii=False),
             annotated_image=annotated_path,
             nom_externe=extracted['nom'],
-            prenom_externe=extracted['prenom']
+            prenom_externe=extracted['prenom'],
+            utilisateur_id=utilisateur_id  
         )
 
         db.session.add(ocr_entry)
         db.session.commit()
         db.session.refresh(ocr_entry)
 
-        # 5️⃣ LIEU
         lieu_id = request.form.get("lieu_id")
         print(f"📍 Lieu ID reçu: {lieu_id}")
 
@@ -80,24 +70,24 @@ def re_ocr():
             return jsonify({"status": "error", "message": "Lieu non spécifié"}), 400
 
         lieu_id = int(lieu_id)
-
-        # 6️⃣ CRÉER LA VÉRIFICATION
-        # ⚠️ VÉRIFIEZ LES COLONNES EXACTES DE VOTRE MODÈLE Verification
-        from models.verification import Verification
-        
-        # Option A : Si votre modèle a seulement ocr_result_id, lieu_id, utilisateur_id
+       
         verification = Verification(
             ocr_result_id=ocr_entry.id,
             lieu_id=lieu_id,
-            utilisateur_id=utilisateur_id
+            utilisateur_id=utilisateur_id,
+            resultat_photo=f"{extracted['nom']} {extracted['prenom']}",  
+            resultat_donnee='EXTERNE',  
+            url_image_echec=original_url    
         )
-        
-       
+               
         db.session.add(verification)
         db.session.commit()
 
+        print(f"✅ Vérification créée avec url_image_echec: {original_url}")
+
         return jsonify({
             "status": "success",
+            "verification_id": verification.id,  
             "ocr_id": ocr_entry.id,
             "nom": extracted['nom'],
             "prenom": extracted['prenom'],
@@ -115,57 +105,56 @@ def re_ocr():
 
 
 
+
+
+
 @jwt_required()
 def list_externes():
-    """Liste tous les externes avec lieu et utilisateur"""
+    """Liste uniquement les vérifications marquées comme EXTERNE"""
     try:
         from models.verification import Verification
         from models.lieu import Lieu
         from models.utilisateur import Utilisateur
-        from models.utilisateur import Utilisateur
+        from models.ocr_result import OCRResult
 
-        
-        # Récupérer le lieu_id depuis les query parameters
         current_user_id = get_jwt_identity()
         lieu_id = request.args.get('lieu_id', type=int)
         
         print(f"📋 Externes - User ID: {current_user_id} | Lieu ID: {lieu_id}")
-        
-        # Query avec jointures
+                
+        # ✅ Requête basée sur Verification, pas OCRResult
         query = db.session.query(
+            Verification,
             OCRResult,
             Lieu,
             Utilisateur
         ).join(
-            Verification, OCRResult.id == Verification.ocr_result_id
+            OCRResult, Verification.ocr_result_id == OCRResult.id
         ).join(
             Lieu, Verification.lieu_id == Lieu.id
         ).join(
             Utilisateur, Verification.utilisateur_id == Utilisateur.id
         ).filter(
-            OCRResult.document_id.is_(None),              
-            Verification.utilisateur_id == current_user_id  
+            Verification.utilisateur_id == current_user_id,
+            Verification.resultat_donnee == 'EXTERNE'  # ✅ FILTRAGE CLEF !
         )
-
-        # Filtre par lieu OPTIONNEL
+        
         if lieu_id:
             query = query.filter(Verification.lieu_id == lieu_id)
 
-        results = query.order_by(OCRResult.created_at.desc()).all()
+        results = query.order_by(Verification.date_verification.desc()).all()
 
+        print(f"✅ {len(results)} externes trouvés (resultat_donnee=EXTERNE)")
         
-        print(f"✅ {len(results)} externes trouvés")
-        
-        # Formatter la réponse
         externes_list = []
-        for ocr, lieu, user in results:
+        for verification, ocr, lieu, user in results:
             externes_list.append({
-                "id": ocr.id,
+                "id": verification.id,  # ✅ ID de la verification
                 "nom": ocr.nom_externe,
                 "prenom": ocr.prenom_externe,
                 "image_name": ocr.image_name,
                 "confidence": ocr.confidence,
-                "created_at": ocr.created_at.isoformat() if ocr.created_at else None,
+                "created_at": verification.date_verification.isoformat(),  # ✅ Date de verification
                 "lieu": {
                     "id": lieu.id,
                     "nom": lieu.nom
@@ -184,6 +173,7 @@ def list_externes():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -273,7 +263,7 @@ def ocr_compare():
             resultat_photo="NON_VERIFIE",
             url_image_echec=f"http://127.0.0.1:8000/api/uploads_mobile/{file.filename}"
         )
-            
+
         response_data = {
             "status": "success" if matches else "not_found",
             "ocr_id": ocr_entry.id,

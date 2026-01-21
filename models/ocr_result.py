@@ -2,6 +2,10 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime,Integer,ForeignKey
 from sqlalchemy.orm import relationship
 from config.database import db
+from sqlalchemy.sql import func
+
+
+
 
 
 class OCRResult(db.Model):
@@ -15,7 +19,7 @@ class OCRResult(db.Model):
     annotated_image = db.Column(db.String(255))
     utilisateur_id = Column(Integer, ForeignKey('utilisateurs.id'))
     document_id = db.Column(db.Integer, db.ForeignKey("documents.id"), nullable=True)
-    created_at = db.Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     nom_externe = db.Column(db.String(100), nullable=True)
     prenom_externe = db.Column(db.String(100), nullable=True)
 
@@ -34,6 +38,8 @@ class OCRResult(db.Model):
             'utilisateur_id': self.utilisateur_id,
             'document_id': self.document_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            "nom_externe": self.nom_externe,
+            "prenom_externe": self.prenom_externe,
             'utilisateur': {
                 'id': self.utilisateur.id,
                 'nom': self.utilisateur.nom,

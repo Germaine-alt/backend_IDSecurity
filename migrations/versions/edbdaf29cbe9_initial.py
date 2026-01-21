@@ -1,8 +1,8 @@
 """initial
 
-Revision ID: 951219ffe40e
+Revision ID: edbdaf29cbe9
 Revises: 
-Create Date: 2026-01-19 07:17:52.844494
+Create Date: 2026-01-21 15:27:12.205845
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
-revision = '951219ffe40e'
+revision = 'edbdaf29cbe9'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -96,7 +96,7 @@ def upgrade():
     sa.Column('annotated_image', sa.String(length=255), nullable=True),
     sa.Column('utilisateur_id', sa.Integer(), nullable=True),
     sa.Column('document_id', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('nom_externe', sa.String(length=100), nullable=True),
     sa.Column('prenom_externe', sa.String(length=100), nullable=True),
     sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ),
@@ -105,7 +105,7 @@ def upgrade():
     )
     op.create_table('verifications',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('date_verification', sa.DateTime(), nullable=True),
+    sa.Column('date_verification', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('resultat_photo', sa.String(length=50), nullable=True),
     sa.Column('resultat_donnee', sa.String(length=50), nullable=True),
     sa.Column('url_image_echec', sa.String(length=255), nullable=True),
