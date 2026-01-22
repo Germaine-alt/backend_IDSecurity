@@ -85,14 +85,27 @@ class VerificationService:
 
     @staticmethod
     def get_stats_verifications_par_lieu():
-        results = db.session.query(
+        subquery = db.session.query(
             Verification.lieu_id,
-            func.count(Verification.id)
+            func.max(Verification.date_verification).label('derniere_verif')
         ).filter(
             Verification.lieu_id.isnot(None)
         ).group_by(
             Verification.lieu_id
-        ).all()
+        ).subquery()
+
+        results = db.session.query(
+            Verification.lieu_id,
+            func.count(Verification.id)
+        ).join(
+            subquery,
+            Verification.lieu_id == subquery.c.lieu_id
+        ).group_by(
+            Verification.lieu_id,
+            subquery.c.derniere_verif
+        ).order_by(
+            subquery.c.derniere_verif.desc()  
+        ).limit(10).all()
 
         data = []
         for lieu_id, total in results:
@@ -105,7 +118,3 @@ class VerificationService:
                 })
 
         return data
-
-
-        
-
