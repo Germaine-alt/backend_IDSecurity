@@ -9,7 +9,7 @@ class Lieu(db.Model):
     nom = Column(String(255), nullable=False)         
     longitude = Column(Float)
     latitude = Column(Float)
-    site_id = Column(Integer)
+    site_id = Column(String(255))
     
     verifications = relationship("Verification", back_populates="lieu")
 

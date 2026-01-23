@@ -26,12 +26,8 @@ class LieuService:
         except (ValueError, TypeError):
             errors.append("La latitude doit être un nombre")
         
-        try:
-            site_id = int(site_id)
-            if site_id < 0:
-                errors.append("Le site_id ne peut pas être négatif")
-        except (ValueError, TypeError):
-            errors.append("Le site_id doit être un entier")
+        if not site_id or str(site_id).strip() == "":
+            errors.append("Le site_id est obligatoire")
 
         return errors
     
@@ -44,7 +40,7 @@ class LieuService:
         
         # Convertir les types
         try:
-            site_id = int(site_id)
+            site_id = str(site_id).strip()
             longitude = float(longitude)
             latitude = float(latitude)
         except (ValueError, TypeError) as e:
@@ -94,7 +90,7 @@ class LieuService:
         lieu.nom = str(nom).strip()
         lieu.longitude = float(longitude)
         lieu.latitude = float(latitude)
-        lieu.site_id = int(site_id)
+        lieu.site_id = str(site_id).strip()
         db.session.commit()
         return lieu
     

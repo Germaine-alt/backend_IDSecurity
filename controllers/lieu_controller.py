@@ -163,7 +163,7 @@ def import_lieux():
                     continue
                 
                 try:
-                    site_id = int(row['site_id'])
+                    site_id = str(row['site_id']).strip()
                 except (ValueError, TypeError):
                     errors.append(f"Ligne {index + 2}: Site_id invalide ({row['site_id']})")
                     continue

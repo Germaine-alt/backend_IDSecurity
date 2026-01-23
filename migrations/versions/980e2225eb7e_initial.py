@@ -1,8 +1,8 @@
 """initial
 
-Revision ID: edbdaf29cbe9
+Revision ID: 980e2225eb7e
 Revises: 
-Create Date: 2026-01-21 15:27:12.205845
+Create Date: 2026-01-22 17:48:49.962945
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
-revision = 'edbdaf29cbe9'
+revision = '980e2225eb7e'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -23,7 +23,7 @@ def upgrade():
     sa.Column('nom', sa.String(length=255), nullable=False),
     sa.Column('longitude', sa.Float(), nullable=True),
     sa.Column('latitude', sa.Float(), nullable=True),
-    sa.Column('site_id', sa.Integer(), nullable=True),
+    sa.Column('site_id', sa.String(length=255), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('roles',

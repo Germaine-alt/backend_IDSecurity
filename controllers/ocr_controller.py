@@ -8,14 +8,15 @@ from services.verification_service import VerificationService
 from config.database import db
 import os, json
 from models.verification import Verification
+import timeit 
+
 
 UPLOAD_FOLDER = "public/uploads_mobile"
 RESULT_FOLDER = "public/results"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULT_FOLDER, exist_ok=True)
 
-ocr_service = OCRService(langs=['fr','en','nl','de'], use_gpu=False)
-
+ocr_service = OCRService(langs=['fr','en'], use_gpu=False)
 
 
 @jwt_required()

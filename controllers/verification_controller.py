@@ -36,18 +36,72 @@ def get_mes_verifications():
 
 @jwt_required()
 def get_statistiques_verifications():
-    stats = VerificationService.get_statistiques_verifications()
+    periode = request.args.get('periode', default=None, type=str)
+    stats = VerificationService.get_statistiques_verifications(periode)
     return jsonify({
         "message": "Statistiques des vérifications",
         "statistiques": stats
     }), 200
 
-
 @jwt_required()
 def get_statistiques_verifications_par_lieu():
-    stats = VerificationService.get_stats_verifications_par_lieu()
+    periode = request.args.get('periode', default=None, type=str)
+    stats = VerificationService.get_stats_verifications_par_lieu(periode)
     return jsonify({
         "message": "Statistiques des vérifications par lieu",
         "data": stats
+    }), 200
+
+@jwt_required()
+def get_dernieres_verifications():
+    periode = request.args.get('periode', default=None, type=str)
+    limit = request.args.get('limit', default=4, type=int)
+    verifications = VerificationService.get_dernieres_verifications(periode, limit)
+    return jsonify({
+        "message": "Dernières vérifications",
+        "verifications": [v.to_dict() for v in verifications]
+    }), 200
+
+@jwt_required()
+def get_statistiques_custom():
+    start_date = request.args.get('start_date', default=None, type=str)
+    end_date = request.args.get('end_date', default=None, type=str)
+    
+    if not start_date or not end_date:
+        return jsonify({"error": "Les dates de début et de fin sont requises"}), 400
+    
+    stats = VerificationService.get_statistiques_verifications_custom(start_date, end_date)
+    return jsonify({
+        "message": "Statistiques personnalisées",
+        "statistiques": stats
+    }), 200
+
+@jwt_required()
+def get_stats_verifications_par_lieu_custom():
+    start_date = request.args.get('start_date', default=None, type=str)
+    end_date = request.args.get('end_date', default=None, type=str)
+    
+    if not start_date or not end_date:
+        return jsonify({"error": "Les dates de début et de fin sont requises"}), 400
+    
+    stats = VerificationService.get_stats_verifications_par_lieu_custom(start_date, end_date)
+    return jsonify({
+        "message": "Statistiques des vérifications par lieu (personnalisé)",
+        "data": stats
+    }), 200
+
+@jwt_required()
+def get_dernieres_verifications_custom():
+    start_date = request.args.get('start_date', default=None, type=str)
+    end_date = request.args.get('end_date', default=None, type=str)
+    limit = request.args.get('limit', default=4, type=int)
+    
+    if not start_date or not end_date:
+        return jsonify({"error": "Les dates de début et de fin sont requises"}), 400
+    
+    verifications = VerificationService.get_dernieres_verifications_custom(start_date, end_date, limit)
+    return jsonify({
+        "message": "Dernières vérifications (personnalisé)",
+        "verifications": [v.to_dict() for v in verifications]
     }), 200
 

@@ -1,7 +1,9 @@
 from config.database import db
+from models.lieu import Lieu
 from models.verification import Verification
 from flask_jwt_extended import get_jwt_identity
-from sqlalchemy import func
+from datetime import datetime, timedelta
+from sqlalchemy import func, extract
 
 class VerificationService:
 
@@ -15,7 +17,6 @@ class VerificationService:
         resultat_photo: str = "NON_VERIFIE",
         url_image_echec: str = None
     ) -> Verification:
-
         verification = Verification(
             utilisateur_id=utilisateur_id,
             lieu_id=lieu_id,
@@ -25,7 +26,6 @@ class VerificationService:
             resultat_photo=resultat_photo,
             url_image_echec=url_image_echec
         )
-
         db.session.add(verification)
         try:
             db.session.commit()
@@ -35,7 +35,6 @@ class VerificationService:
             db.session.rollback()
             print(f"❌ Erreur lors de l'enregistrement de la vérification: {e}")
             raise
-
         return verification
 
 
@@ -47,9 +46,6 @@ class VerificationService:
     def get_all_verifications():
         return Verification.query.all()
 
-
-
-
     @staticmethod
     def get_user_verifications():          
         current_user_id = get_jwt_identity()          
@@ -59,37 +55,89 @@ class VerificationService:
         return verifications    
 
 
+
     @staticmethod
-    def get_statistiques_verifications():
-        total = db.session.query(func.count(Verification.id)).scalar()
-
-        reussies = db.session.query(func.count(Verification.id)).filter(
+    def get_statistiques_verifications(periode=None):
+        """Récupère les statistiques avec filtrage par période"""
+        query = Verification.query
+        
+        if periode:
+            now = datetime.now()
+            if periode == "today":
+                # Aujourd'hui (minuit à maintenant)
+                start_of_day = datetime.combine(now.date(), datetime.min.time())
+                query = query.filter(Verification.date_verification >= start_of_day)
+            elif periode == "yesterday":
+                # Hier (toute la journée)
+                yesterday = now - timedelta(days=1)
+                start_of_day = datetime.combine(yesterday.date(), datetime.min.time())
+                end_of_day = datetime.combine(yesterday.date(), datetime.max.time())
+                query = query.filter(
+                    Verification.date_verification >= start_of_day,
+                    Verification.date_verification <= end_of_day
+                )
+            elif periode == "week":
+                # 7 derniers jours
+                week_ago = now - timedelta(days=7)
+                query = query.filter(Verification.date_verification >= week_ago)
+            elif periode == "month":
+                # 30 derniers jours
+                month_ago = now - timedelta(days=30)
+                query = query.filter(Verification.date_verification >= month_ago)
+            
+        total = query.count()
+        
+        reussies = query.filter(
             Verification.resultat_donnee == "OK"
-        ).scalar()
+        ).count()
 
-        echouees = db.session.query(func.count(Verification.id)).filter(
+        echouees = query.filter(
             Verification.resultat_donnee == "ECHEC"
-        ).scalar()
+        ).count()
 
-        externes = db.session.query(func.count(Verification.id)).filter(
+        externes = query.filter(
             Verification.resultat_donnee == "EXTERNE"
-        ).scalar()
+        ).count()
 
         return {
             "total": total,
             "reussies": reussies,
             "echouees": echouees,
-            "externes": externes
+            "externes": externes,
+            "periode": periode or "all"
         }
 
-
     @staticmethod
-    def get_stats_verifications_par_lieu():
-        subquery = db.session.query(
+    def get_stats_verifications_par_lieu(periode=None):
+        """Récupère les statistiques par lieu avec filtrage par période"""
+        query = Verification.query
+        
+        if periode:
+            now = datetime.now()
+            if periode == "today":
+                start_of_day = datetime.combine(now.date(), datetime.min.time())
+                query = query.filter(Verification.date_verification >= start_of_day)
+            elif periode == "yesterday":
+                yesterday = now - timedelta(days=1)
+                start_of_day = datetime.combine(yesterday.date(), datetime.min.time())
+                end_of_day = datetime.combine(yesterday.date(), datetime.max.time())
+                query = query.filter(
+                    Verification.date_verification >= start_of_day,
+                    Verification.date_verification <= end_of_day
+                )
+            elif periode == "week":
+                week_ago = now - timedelta(days=7)
+                query = query.filter(Verification.date_verification >= week_ago)
+            elif periode == "month":
+                month_ago = now - timedelta(days=30)
+                query = query.filter(Verification.date_verification >= month_ago)
+            
+        
+        subquery = query.filter(
+            Verification.lieu_id.isnot(None)
+        ).with_entities(
             Verification.lieu_id,
             func.max(Verification.date_verification).label('derniere_verif')
-        ).filter(
-            Verification.lieu_id.isnot(None)
         ).group_by(
             Verification.lieu_id
         ).subquery()
@@ -109,7 +157,6 @@ class VerificationService:
 
         data = []
         for lieu_id, total in results:
-            from models.lieu import Lieu
             lieu = Lieu.query.get(lieu_id)
             if lieu:
                 data.append({
@@ -118,3 +165,160 @@ class VerificationService:
                 })
 
         return data
+
+    @staticmethod
+    def get_dernieres_verifications(periode=None, limit=4):
+        """Récupère les dernières vérifications avec filtrage par période"""
+        query = Verification.query
+        
+        if periode:
+            now = datetime.now()
+            if periode == "today":
+                start_of_day = datetime.combine(now.date(), datetime.min.time())
+                query = query.filter(Verification.date_verification >= start_of_day)
+            elif periode == "yesterday":
+                yesterday = now - timedelta(days=1)
+                start_of_day = datetime.combine(yesterday.date(), datetime.min.time())
+                end_of_day = datetime.combine(yesterday.date(), datetime.max.time())
+                query = query.filter(
+                    Verification.date_verification >= start_of_day,
+                    Verification.date_verification <= end_of_day
+                )
+            elif periode == "week":
+                week_ago = now - timedelta(days=7)
+                query = query.filter(Verification.date_verification >= week_ago)
+            elif periode == "month":
+                month_ago = now - timedelta(days=30)
+                query = query.filter(Verification.date_verification >= month_ago)
+            
+        
+        return query.order_by(
+            Verification.date_verification.desc()
+        ).limit(limit).all()
+
+
+
+    @staticmethod
+    def get_statistiques_verifications_custom(start_date=None, end_date=None):
+        """Récupère les statistiques avec filtrage par dates personnalisées"""
+        query = Verification.query
+        
+        if start_date:
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            query = query.filter(Verification.date_verification >= start)
+        
+        if end_date:
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            # Ajouter 23h59 à la date de fin
+            end = datetime.combine(end, datetime.max.time())
+            query = query.filter(Verification.date_verification <= end)
+        
+        total = query.count()
+        reussies = query.filter(Verification.resultat_donnee == "OK").count()
+        echouees = query.filter(Verification.resultat_donnee == "ECHEC").count()
+        externes = query.filter(Verification.resultat_donnee == "EXTERNE").count()
+
+        return {
+            "total": total,
+            "reussies": reussies,
+            "echouees": echouees,
+            "externes": externes,
+            "start_date": start_date,
+            "end_date": end_date
+        }
+
+
+    @staticmethod
+    def get_statistiques_verifications_custom(start_date, end_date):
+        """Récupère les statistiques avec filtrage par dates personnalisées"""
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            # Ajouter 23h59 à la date de fin
+            end = datetime.combine(end, datetime.max.time())
+        except ValueError as e:
+            raise ValueError(f"Format de date invalide: {str(e)}")
+        
+        query = Verification.query.filter(
+            Verification.date_verification >= start,
+            Verification.date_verification <= end
+        )
+        
+        total = query.count()
+        reussies = query.filter(Verification.resultat_donnee == "OK").count()
+        echouees = query.filter(Verification.resultat_donnee == "ECHEC").count()
+        externes = query.filter(Verification.resultat_donnee == "EXTERNE").count()
+
+        return {
+            "total": total,
+            "reussies": reussies,
+            "echouees": echouees,
+            "externes": externes,
+            "start_date": start_date,
+            "end_date": end_date
+        }
+
+    @staticmethod
+    def get_stats_verifications_par_lieu_custom(start_date, end_date):
+        """Récupère les statistiques par lieu avec filtrage par dates personnalisées"""
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            end = datetime.combine(end, datetime.max.time())
+        except ValueError as e:
+            raise ValueError(f"Format de date invalide: {str(e)}")
+        
+        query = Verification.query.filter(
+            Verification.date_verification >= start,
+            Verification.date_verification <= end
+        )
+        
+        subquery = query.filter(
+            Verification.lieu_id.isnot(None)
+        ).with_entities(
+            Verification.lieu_id,
+            func.max(Verification.date_verification).label('derniere_verif')
+        ).group_by(
+            Verification.lieu_id
+        ).subquery()
+
+        results = db.session.query(
+            Verification.lieu_id,
+            func.count(Verification.id)
+        ).join(
+            subquery,
+            Verification.lieu_id == subquery.c.lieu_id
+        ).group_by(
+            Verification.lieu_id,
+            subquery.c.derniere_verif
+        ).order_by(
+            subquery.c.derniere_verif.desc()  
+        ).limit(10).all()
+
+        data = []
+        for lieu_id, total in results:
+            lieu = Lieu.query.get(lieu_id)
+            if lieu:
+                data.append({
+                    "lieu": lieu.nom,
+                    "total": total
+                })
+
+        return data
+
+    @staticmethod
+    def get_dernieres_verifications_custom(start_date, end_date, limit=4):
+        """Récupère les dernières vérifications avec filtrage par dates personnalisées"""
+        try:
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            end = datetime.combine(end, datetime.max.time())
+        except ValueError as e:
+            raise ValueError(f"Format de date invalide: {str(e)}")
+        
+        return Verification.query.filter(
+            Verification.date_verification >= start,
+            Verification.date_verification <= end
+        ).order_by(
+            Verification.date_verification.desc()
+        ).limit(limit).all()

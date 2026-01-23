@@ -9,7 +9,7 @@ class Utilisateur(db.Model):
     id = Column(Integer, primary_key=True)
     nom = Column(String(255))
     prenom = Column(String(255))
-    email = Column(String(255), unique=True)
+    email = Column[str](String(255), unique=True)
     telephone = Column(String(50))
     mot_passe = Column(String(255))
     poste = Column(String(255))
