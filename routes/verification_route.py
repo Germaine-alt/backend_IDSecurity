@@ -39,3 +39,8 @@ verification_bp.route("/stat/lieu/custom", methods=["GET"])(
 verification_bp.route("/dernieres_verifications/custom", methods=["GET"])(
     get_dernieres_verifications_custom
 )
+
+# l'export Excel
+verification_bp.route("/export/excel", methods=["GET"])(
+    export_verifications_excel
+)

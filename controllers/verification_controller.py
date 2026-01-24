@@ -1,6 +1,7 @@
-from flask import request, jsonify
+from flask import request, jsonify , send_file
 from flask_jwt_extended import jwt_required
 from services.verification_service import VerificationService
+from datetime import datetime, timedelta
 
 
 @jwt_required()
@@ -105,3 +106,59 @@ def get_dernieres_verifications_custom():
         "verifications": [v.to_dict() for v in verifications]
     }), 200
 
+
+
+# Exportation
+
+@jwt_required()
+def export_verifications_excel():
+    """
+    Exporte toutes les vérifications vers un fichier Excel
+    """
+    try:
+        # Récupérer les paramètres
+        periode = request.args.get('periode', default=None, type=str)
+        start_date = request.args.get('start_date', default=None, type=str)
+        end_date = request.args.get('end_date', default=None, type=str)
+        
+        print(f"📊 Export demandé - Période: {periode}, Dates: {start_date} à {end_date}")
+        
+        # Récupérer les vérifications
+        if start_date and end_date:
+            verifications = VerificationService.get_verifications_for_export_custom(start_date, end_date)
+            filename_date = f"{start_date}_to_{end_date}"
+        elif periode:
+            verifications = VerificationService.get_verifications_for_export(periode)
+            filename_date = periode
+        else:
+            verifications = VerificationService.get_all_verifications()
+            filename_date = "all"
+        
+        print(f"✅ {len(verifications)} vérifications récupérées")
+        
+        if not verifications:
+            return jsonify({"message": "Aucune vérification à exporter"}), 404
+        
+        # Générer le fichier Excel
+        excel_buffer = VerificationService.export_verifications_to_excel(verifications)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"verifications_{filename_date}_{timestamp}.xlsx"
+        
+        print(f"✅ Fichier Excel généré: {filename}")
+        
+        return send_file(
+            excel_buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except ValueError as e:
+        print(f"❌ Erreur de validation: {str(e)}")
+        return jsonify({"error": f"Erreur de format: {str(e)}"}), 400
+    except Exception as e:
+        print(f"❌ Erreur serveur: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur serveur: {str(e)}"}), 500
