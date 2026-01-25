@@ -22,3 +22,7 @@ document_bp.route("/update_document/<int:id>", methods=["PUT"])(
 document_bp.route("/delete_document/<int:id>", methods=["DELETE"])(
     delete_document
 )
+
+document_bp.route("/import_documents", methods=["POST"])(
+    import_documents
+)

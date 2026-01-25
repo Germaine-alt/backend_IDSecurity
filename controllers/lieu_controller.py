@@ -125,11 +125,6 @@ def import_lieux():
                 "colonnes_trouvees": list(df.columns)
             }), 400
 
-
-        
-
-
-
         # Supprimer les lignes vides
         df = df.dropna(how='all')
         
