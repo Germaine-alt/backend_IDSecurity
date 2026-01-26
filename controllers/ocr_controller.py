@@ -1,4 +1,5 @@
 from flask import request, jsonify, current_app, url_for
+from models.utilisateur import Utilisateur
 from services.ocr_service import OCRService
 from services.text_utils import clean_text_for_matching
 from models.document import Document  
@@ -23,6 +24,18 @@ ocr_service = OCRService(langs=['fr','en'], use_gpu=False)
 def re_ocr():
     utilisateur_id = get_jwt_identity()
     print(f"👤 Utilisateur ID depuis JWT: {utilisateur_id}")
+
+
+    # ✅ Récupérer l'utilisateur et son lieu
+    utilisateur = Utilisateur.query.get(utilisateur_id)
+    if not utilisateur:
+        return jsonify({"status": "error", "message": "Utilisateur non trouvé"}), 404
+    
+    if not utilisateur.lieu_id:
+        return jsonify({"status": "error", "message": "Utilisateur non assigné à un lieu"}), 400
+    
+    lieu_id = utilisateur.lieu_id
+    print(f"📍 Lieu ID de l'utilisateur: {lieu_id}")
 
     if "image" not in request.files:
         return jsonify(error="Aucun fichier envoyé"), 400
@@ -64,13 +77,7 @@ def re_ocr():
         db.session.commit()
         db.session.refresh(ocr_entry)
 
-        lieu_id = request.form.get("lieu_id")
-        print(f"📍 Lieu ID reçu: {lieu_id}")
-
-        if not lieu_id:
-            return jsonify({"status": "error", "message": "Lieu non spécifié"}), 400
-
-        lieu_id = int(lieu_id)
+        
        
         verification = Verification(
             ocr_result_id=ocr_entry.id,
@@ -119,9 +126,14 @@ def list_externes():
         from models.ocr_result import OCRResult
 
         current_user_id = get_jwt_identity()
-        lieu_id = request.args.get('lieu_id', type=int)
+        # ✅ Récupérer le lieu de l'utilisateur courant
+        utilisateur = Utilisateur.query.get(current_user_id)
+        if not utilisateur:
+            return jsonify({"error": "Utilisateur non trouvé"}), 404
         
+        lieu_id = utilisateur.lieu_id
         print(f"📋 Externes - User ID: {current_user_id} | Lieu ID: {lieu_id}")
+      
                 
         # ✅ Requête basée sur Verification, pas OCRResult
         query = db.session.query(
@@ -185,8 +197,20 @@ def ocr_compare():
     utilisateur_id = get_jwt_identity()
     print(f"👤 Utilisateur ID depuis JWT: {utilisateur_id}")
 
+    # ✅ Récupérer l'utilisateur et son lieu
+    utilisateur = Utilisateur.query.get(utilisateur_id)
+    if not utilisateur:
+        return jsonify({"status": "error", "message": "Utilisateur non trouvé"}), 404
+    
+    if not utilisateur.lieu_id:
+        return jsonify({"status": "error", "message": "Utilisateur non assigné à un lieu"}), 400
+    
+    lieu_id = utilisateur.lieu_id
+    print(f"📍 Lieu ID de l'utilisateur: {lieu_id}")
+
     if "image" not in request.files:
         return jsonify(error="Aucun fichier envoyé"), 400
+
 
     file = request.files["image"]
     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
@@ -247,13 +271,6 @@ def ocr_compare():
         db.session.commit()
         db.session.refresh(ocr_entry)
 
-        lieu_id = request.form.get("lieu_id")
-        print(f"📍 Lieu ID reçu: {lieu_id}")
-
-        if not lieu_id:
-            return jsonify({"status": "error", "message": "Lieu non spécifié"}), 400
-
-        lieu_id = int(lieu_id)
 
         verification = VerificationService.save_verification(
             utilisateur_id=utilisateur_id,

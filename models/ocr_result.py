@@ -5,9 +5,6 @@ from config.database import db
 from sqlalchemy.sql import func
 
 
-
-
-
 class OCRResult(db.Model):
     __tablename__ = "ocr_results"
 

@@ -71,7 +71,7 @@ class UtilisateurService:
         return user
 
     @staticmethod
-    def update_utilisateur(user_id, nom=None, prenom=None, email=None, telephone=None, mot_passe=None, poste=None, role_id=None):
+    def update_utilisateur(user_id, nom=None, prenom=None, email=None, telephone=None, mot_passe=None, poste=None, role_id=None, lieu_id=None):
         user = Utilisateur.query.get(user_id)
         if not user:
             return None
@@ -89,7 +89,11 @@ class UtilisateurService:
             user.role_id = role_id
         if mot_passe is not None:
             user.mot_passe = generate_password_hash(mot_passe)
-
+        
+        if lieu_id is not None:
+            user.lieu_id = lieu_id
+        elif 'lieu_id' in locals():
+            user.lieu_id = None
         db.session.commit()
         return user   
     
@@ -100,14 +104,12 @@ class UtilisateurService:
         if not user:
             return None, "Utilisateur non trouvé"
         
-        # Vérifier l'ancien mot de passe
         if not check_password_hash(user.mot_passe, ancien_mot_passe):
             return None, "Ancien mot de passe incorrect"
         
-        # Vérifier que le nouveau mot de passe est différent de l'ancien
         if check_password_hash(user.mot_passe, nouveau_mot_passe):
             return None, "Le nouveau mot de passe doit être différent de l'ancien"
-        # Mettre à jour le mot de passe
+        
         user.mot_passe = generate_password_hash(nouveau_mot_passe)
         db.session.commit()
         return user, None
@@ -118,7 +120,7 @@ class UtilisateurService:
         user = Utilisateur.query.get(user_id)
         if not user:
             return None, "Utilisateur non trouvé"
-        # Générer un nouveau mot de passe temporaire
+        
         mot_passe_temp = generer_mot_de_passe()
         user.mot_passe = generate_password_hash(mot_passe_temp)
         db.session.commit()

@@ -12,6 +12,7 @@ class Lieu(db.Model):
     site_id = Column(String(255))
     
     verifications = relationship("Verification", back_populates="lieu")
+    utilisateurs = relationship("Utilisateur", back_populates="lieu")
 
     def to_dict(self):
         return{

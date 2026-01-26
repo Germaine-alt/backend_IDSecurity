@@ -103,7 +103,9 @@ def update_utilisateur(id):
         telephone=data.get("telephone"),
         mot_passe=data.get("mot_passe"),
         poste=data.get("poste"),
-        role_id=data.get("role_id")
+        role_id=data.get("role_id"),
+        lieu_id=data.get("lieu_id")
+
     )
     if not user:
         return jsonify({"message": "Utilisateur introuvable"}), 404
