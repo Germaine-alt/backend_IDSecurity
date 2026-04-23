@@ -30,3 +30,5 @@ auth_bp.route("/changer_mot_de_passe", methods=["POST"])(
 auth_bp.route("/admin/reinitialiser_mot_de_passe/<int:user_id>", methods=["POST"])(
     reinitialiser_mot_de_passe
 )
+
+

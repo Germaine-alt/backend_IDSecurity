@@ -10,6 +10,7 @@ from config.database import db
 import os, json
 from models.verification import Verification
 import timeit 
+import time
 
 
 UPLOAD_FOLDER = "public/uploads_mobile"
@@ -22,6 +23,8 @@ ocr_service = OCRService(langs=['fr','en'], use_gpu=False)
 
 @jwt_required()
 def re_ocr():
+    start_time = time.perf_counter()  # ⏱ Début du chronomètre
+
     utilisateur_id = get_jwt_identity()
     print(f"👤 Utilisateur ID depuis JWT: {utilisateur_id}")
 
@@ -45,12 +48,23 @@ def re_ocr():
     file.save(save_path)
 
     try:
+        t0 = time.perf_counter()
+
         results = ocr_service.process_image(save_path, preprocess=True)
-        
+        t1 = time.perf_counter()
+        print(f"⏱ OCR processing: {t1 - t0:.3f} secondes")
+
+        # Mesure du temps pour l'annotation
+        t0 = time.perf_counter()
         annotated_path = ocr_service.annotate_image(
             save_path, results, output_dir=UPLOAD_FOLDER
         )
 
+        t1 = time.perf_counter()
+        print(f"⏱ Image annotation: {t1 - t0:.3f} secondes")
+
+        # Indexation + extraction
+        t0 = time.perf_counter()
         annotated_filename = os.path.basename(annotated_path)
 
         original_url = f"http://127.0.0.1:8000/api/uploads_mobile/{file.filename}"
@@ -58,8 +72,20 @@ def re_ocr():
 
         full_text = " ".join([r["text"] for r in results])
         max_conf = max([r["confidence"] for r in results]) if results else 0.0
-        extracted = ocr_service.extract_externe_fields(results)
-        
+        # extracted = ocr_service.extract_externe_fields(results)
+        indexed = ocr_service.index_ocr_results(results)
+
+        extracted = ocr_service.extract_externe_fields(
+            results=results,
+            indexed=indexed
+        )
+        t1 = time.perf_counter()
+        print(f"⏱ Index + extraction: {t1 - t0:.3f} secondes")
+
+        # Total
+        end_time = time.perf_counter()
+        print(f"✅ Temps total re_ocr(): {end_time - start_time:.3f} secondes")
+
         print(f"📝 Extraction: Nom={extracted['nom']}, Prénom={extracted['prenom']}")
 
         ocr_entry = OCRResult(
@@ -194,6 +220,8 @@ def list_externes():
 
 @jwt_required()
 def ocr_compare():
+    start_total = time.perf_counter()  # ⏱ Temps total
+
     utilisateur_id = get_jwt_identity()
     print(f"👤 Utilisateur ID depuis JWT: {utilisateur_id}")
 
@@ -217,11 +245,20 @@ def ocr_compare():
     file.save(save_path)
 
     try:
-        results = ocr_service.process_image(save_path, preprocess=True)
+        t0 = time.perf_counter()
 
+        results = ocr_service.process_image(save_path)
+        t1 = time.perf_counter()        
+        print(f"⏱ OCR + preprocessing: {t1 - t0:.3f} s")
+
+        # ---- Annotation image ----
+        t0 = time.perf_counter()
         annotated_path = ocr_service.annotate_image(
             save_path, results, output_dir=UPLOAD_FOLDER
         )
+        t1 = time.perf_counter()
+        print(f"⏱ Annotation image: {t1 - t0:.3f} s")
+
 
         original_url = url_for(
             "images_mobile", 
@@ -234,16 +271,23 @@ def ocr_compare():
             filename=os.path.basename(annotated_path), 
             _external=True
         )
+        t0 = time.perf_counter()
 
         full_text = " ".join([r["text"] for r in results])
         full_text_norm = clean_text_for_matching(full_text)
+        t1 = time.perf_counter()
+        print(f"⏱ Nettoyage texte OCR: {t1 - t0:.3f} s")
 
+        # ---- Fuzzy match documents ----
+        t0 = time.perf_counter()
         matches = ocr_service.fuzzy_match_document(
             full_text_norm, 
             db,
             Document, 
             threshold=70.0
         )
+        t1 = time.perf_counter()
+        print(f"⏱ Fuzzy match documents: {t1 - t0:.3f} s")
 
         max_confidence = max([r["confidence"] for r in results]) if results else 0.0
 
@@ -256,6 +300,7 @@ def ocr_compare():
             print(f"✅ Match trouvé: document_id = {best_document_id}")
         else:
             print(f"❌ Aucun match trouvé, document_id sera None")
+        t0 = time.perf_counter()
 
         ocr_entry = OCRResult(
             image_name=file.filename,
@@ -271,7 +316,11 @@ def ocr_compare():
         db.session.commit()
         db.session.refresh(ocr_entry)
 
+        t1 = time.perf_counter()
+        print(f"⏱ Sauvegarde OCRResult: {t1 - t0:.3f} s")
 
+        # ---- Sauvegarde Verification ----
+        t0 = time.perf_counter()
         verification = VerificationService.save_verification(
             utilisateur_id=utilisateur_id,
             lieu_id=lieu_id,
@@ -281,7 +330,13 @@ def ocr_compare():
             resultat_photo="NON_VERIFIE",
             url_image_echec=f"http://127.0.0.1:8000/api/uploads_mobile/{file.filename}"
         )
+        t1 = time.perf_counter()
+        print(f"⏱ Sauvegarde Verification: {t1 - t0:.3f} s")
 
+        total_time = time.perf_counter() - start_total
+        print(f"✅ Temps total ocr_compare(): {total_time:.3f} s")
+
+        # ---- Réponse JSON ----
         response_data = {
             "status": "success" if matches else "not_found",
             "ocr_id": ocr_entry.id,

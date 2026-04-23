@@ -18,6 +18,15 @@ class UtilisateurService:
             role_id=role_id,
         )
         db.session.add(user)
+        # db.session.flush()  # Pour obtenir l'ID de l'utilisateur avant le commit
+        
+        # # NOUVEAU : Créer automatiquement les paramètres par défaut
+        # parametres = Parametre(
+        #     utilisateur_id=user.id,
+        #     langue='fr',
+        #     theme='light'
+        #             )
+        # db.session.add(parametres)
         db.session.commit()
         NotificationService.notifier_utilisateurs_avec_permission(
             permission="activer_utilisateur",
@@ -89,11 +98,8 @@ class UtilisateurService:
             user.role_id = role_id
         if mot_passe is not None:
             user.mot_passe = generate_password_hash(mot_passe)
-        
         if lieu_id is not None:
             user.lieu_id = lieu_id
-        elif 'lieu_id' in locals():
-            user.lieu_id = None
         db.session.commit()
         return user   
     
@@ -138,8 +144,4 @@ class UtilisateurService:
             "inactifs": inactifs,
         }
 
-    
-
-
-
-            
+                

@@ -402,12 +402,11 @@ class VerificationService:
         # Compteurs de lignes pour chaque feuille
         row_counters = {'OK': 2, 'ECHEC': 2, 'EXTERNE': 2}
         
-        # Remplir les données
+        
         for verification in verifications:
             try:
                 resultat = verification.resultat_donnee
                 
-                # Déterminer le type de vérification
                 if resultat == 'OK':
                     sheet_type = 'OK'
                 elif resultat == 'ECHEC':
@@ -532,8 +531,6 @@ class VerificationService:
         """
         Récupère les vérifications pour l'export avec leurs relations
         """
-
-        
         query = Verification.query.options(
             joinedload(Verification.utilisateur),
             joinedload(Verification.lieu),

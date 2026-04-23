@@ -21,8 +21,17 @@ class OCRService:
         logger.info("Initialisation EasyOCR...")
         self.reader = easyocr.Reader(langs, gpu=use_gpu)
         logger.info("EasyOCR prêt.")
+        self._documents_cache = None  # ✅ NOUVEAU
+        self._cache_time = 0
         
     def _load_documents(self, db, DocumentModel):
+        import time
+        current_time = time.time()
+        
+        # ✅ Cache de 60 secondes
+        if self._documents_cache and (current_time - self._cache_time < 60):
+            logger.info("📦 Utilisation cache documents")
+            return self._documents_cache
         logger.info("Chargement des documents (safe mode)...")
 
         rows = db.session.execute(
@@ -50,15 +59,41 @@ class OCRService:
                 "date_d_expiration": r.date_d_expiration,
                 "sexe": r.sexe
             })
+            # ✅ Mise en cache
+        self._documents_cache = documents
+        self._cache_time = current_time
 
         logger.info("Documents chargés: %d", len(documents))
         return documents
  
+    # def process_image(self, image_path: str, preprocess: bool = True) -> List[Dict[str, Any]]:
+    #     """
+    #     Lance le pipeline OCR sur l'image et renvoie une liste de dicts:
+    #     { bbox, text, confidence }
+    #     """
+    #     if preprocess:
+    #         img = preprocess_for_ocr(image_path)
+    #     else:
+    #         import cv2
+    #         img = cv2.imread(image_path)
+    #         if img is None:
+    #             raise FileNotFoundError(image_path)
+
+        
+    #     results = self.reader.readtext(img, detail=1, paragraph=False,)
+
+    #     # normaliser la sortie
+    #     normalized = []
+    #     for bbox, text, conf in results:
+    #         normalized.append({
+    #             "bbox": [[int(p[0]), int(p[1])] for p in bbox],
+    #             "text": text.strip(),
+    #             "confidence": float(conf)
+    #         })
+    #     return normalized
+
+
     def process_image(self, image_path: str, preprocess: bool = True) -> List[Dict[str, Any]]:
-        """
-        Lance le pipeline OCR sur l'image et renvoie une liste de dicts:
-        { bbox, text, confidence }
-        """
         if preprocess:
             img = preprocess_for_ocr(image_path)
         else:
@@ -67,8 +102,17 @@ class OCRService:
             if img is None:
                 raise FileNotFoundError(image_path)
 
-        
-        results = self.reader.readtext(img, detail=1, paragraph=False)
+        # ✅ Paramètres optimisés
+        results = self.reader.readtext(
+            img, 
+            detail=1, 
+            paragraph=False,
+            batch_size=4,        # ✅ NOUVEAU : traitement par batch (GPU)
+            decoder='greedy',    # ✅ NOUVEAU : décodage rapide
+            beamWidth=3,         # ✅ NOUVEAU : réduit la recherche
+            text_threshold=0.6,  # ✅ Filtre texte peu confiant
+            low_text=0.3         # ✅ Filtre boxes faibles
+        )
 
         # normaliser la sortie
         normalized = []
@@ -79,6 +123,8 @@ class OCRService:
                 "confidence": float(conf)
             })
         return normalized
+
+    
 
     def annotate_image(self, image_path: str, results: List[Dict[str, Any]], output_dir: str = "public/results") -> str:
         import cv2
@@ -173,291 +219,396 @@ class OCRService:
 
 
 
-
-
-
-
-
-    def extract_externe_fields(self, results):
+    def _is_valid_name_token(self, text, is_nom=True):
         """
-        Extraction précise du nom et prénom pour documents externes
-        Utilise plusieurs stratégies : patterns, positions spatiales, et validation stricte
+        Validation stricte d'un token nom/prénom
         """
-        nom = None
-        prenom = None
+        if not text or len(text.strip()) < 2:
+            return False
         
-        # Filtrer les résultats avec faible confiance (< 0.5)
-        filtered_results = [r for r in results if r.get("confidence", 0) >= 0.5]
-        if not filtered_results:
-            filtered_results = results  # Fallback si tous ont faible confiance
+        # Nettoyer d'abord les labels
+        text = self._clean_label_noise(text)
         
-        # Mots à ignorer (institutions et titres)
-        MOTS_IGNORES = [
-            'REPUBLIQUE', 'RÉPUBLIQUE', 'RERUBLIQUE', 'TOGOLAISE', 'TOGO',
-            'MINISTERE', 'MINISTRE', 'AINISTERE', 'CHARGE', 'SECURITE', 'SÉCURITÉ',
+        # Pas de chiffres
+        if re.search(r'\d', text):
+            return False
+        
+        # Nettoyer et vérifier longueur
+        clean = re.sub(r'[^A-Za-zÀ-ÿ\s\-]', '', text).strip()
+        if len(clean) < 2:
+            return False
+        
+        # Mots interdits étendus
+        FORBIDDEN = [
+            'REPUBLIQUE', 'RÉPUBLIQUE', 'TOGOLAISE', 'TOGO',
+            'MINISTERE', 'MINISTRE', 'CHARGE', 'SECURITE', 'SÉCURITÉ',
             'CARTE', 'IDENTITE', 'IDENTITÉ', 'NATIONALE', 'NATIONAL',
             'PASSEPORT', 'PERMIS', 'CONDUIRE', 'DOCUMENT',
             'EXPIRE', 'EXPIRATION', 'VALIDE', 'VALIDITE', 'VALIDITÉ',
-            'INTERIEUR', 'INTÉRIEUR', 'NUMERO', 'NUMÉRO', 'SEXE',
-            'PROFESSION', 'FAIT', 'SIGNATURE', 'NE', 'NÉE', 'NAME', 'SURNAME',
-            'BIRTH', 'DATE', 'BORN', 'NATIONALITY', 'NATIONALITÉ'
+            'NUMERO', 'NUMÉRO', 'SEXE', 'PROFESSION', 'SIGNATURE',
+            'NE', 'NÉE', 'BIRTH', 'DATE', 'NATIONALITY',
+            # ✅ AJOUTER : rejeter si contient juste le label
+            'NOM', 'PRENOM', 'PRENOMS', 'NAME', 'SURNAME'
         ]
         
-        # Labels possibles pour NOM et PRENOM
-        NOM_LABELS = [r'N[OÔ]M', r'NAME', r'SURNAME', r'FAMILY\s*NAME', r'LAST\s*NAME']
-        PRENOM_LABELS = [r'PR[EÉ]N[OÔ]MS?', r'FIRST\s*NAME', r'GIVEN\s*NAME', r'FORENAME']
+        text_upper = text.upper()
         
-        # Trier par position verticale (haut -> bas) puis horizontale (gauche -> droite)
-        sorted_results = sorted(filtered_results, key=lambda r: (r["bbox"][0][1], r["bbox"][0][0]))
+        # ✅ Rejeter si le texte EST un label
+        if text_upper in FORBIDDEN:
+            return False
         
-        # Combiner tout le texte pour recherche globale
-        full_text = " ".join([r["text"] for r in filtered_results])
-        full_upper = full_text.upper()
+        # Rejeter si contient un mot interdit
+        if any(word in text_upper for word in FORBIDDEN):
+            return False
         
-        print(f"🔍 Texte OCR complet: {full_text[:300]}...")
-        print(f"📊 {len(filtered_results)} résultats filtrés (confiance >= 0.5)")
+        # Pour NOM : doit être majoritairement en majuscules
+        if is_nom:
+            alpha_chars = [c for c in clean if c.isalpha()]
+            if alpha_chars:
+                upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars)
+                if upper_ratio < 0.6:
+                    return False
         
-        def is_valid_name(text, is_nom=True):
-            """Valide si un texte est un nom/prénom valide"""
-            if not text or len(text.strip()) < 2:
-                return False
-            
-            # Ne doit pas contenir de chiffres
-            if re.search(r'\d', text):
-                return False
-            
-            # Ne doit pas être une date
-            if re.search(r'\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}', text):
-                return False
-            
-            # Ne doit pas contenir de mots interdits
-            text_upper = text.upper()
-            if any(mot in text_upper for mot in MOTS_IGNORES):
-                return False
-            
-            # Ne doit pas être trop court après nettoyage
-            clean = re.sub(r'[^A-Za-zÀ-ÿ\s\-]', '', text).strip()
-            if len(clean) < 2:
-                return False
-            
-            # Pour NOM : généralement en majuscules
-            if is_nom:
-                # Accepter si majoritairement en majuscules
-                upper_count = sum(1 for c in clean if c.isupper())
-                if len(clean.replace(' ', '').replace('-', '')) > 0:
-                    upper_ratio = upper_count / len(clean.replace(' ', '').replace('-', ''))
-                    if upper_ratio < 0.5:  # Moins de 50% en majuscules
-                        return False
-            
-            return True
+        return True
+
+
+
+    def _score_name_candidate(self, item, indexed_items, is_nom=True):
+        """
+        Score un candidat nom/prénom (0-10)
+        """
+        score = 0
+        text = item['text']
         
-        def extract_after_label(text, label_pattern, is_nom=True):
-            """Extrait la valeur après un label (NOM, PRENOM, etc.)"""
-            # Pattern pour capturer le label suivi de : ou espace et la valeur
+        # Position verticale (0-3 points)
+        if indexed_items:
+            max_y = max(i['y'] for i in indexed_items)
+            relative_y = item['y'] / max_y if max_y > 0 else 0
+            
+            if relative_y < 0.2:  # Top 20%
+                score += 3
+            elif relative_y < 0.35:  # Top 35%
+                score += 2
+            elif relative_y < 0.5:  # Top 50%
+                score += 1
+        
+        # Confiance OCR (0-2 points)
+        if item['confidence'] > 0.85:
+            score += 2
+        elif item['confidence'] > 0.7:
+            score += 1
+        
+        # Longueur appropriée (0-2 points)
+        text_len = len(text.strip())
+        if 3 <= text_len <= 20:
+            score += 2
+        elif 2 <= text_len <= 25:
+            score += 1
+        
+        # Format texte (0-3 points)
+        if is_nom:
+            # NOM en majuscules
+            if text.isupper():
+                score += 2
+            # Pas de caractères spéciaux
+            if text.replace('-', '').replace(' ', '').isalpha():
+                score += 1
+        else:
+            # ✅ CORRIGÉ : PRENOM accepte MAJUSCULES ou Capitalisation
+            if text.isupper():  # Tout en majuscules (ex: JEAN PAUL)
+                score += 2
+            elif text[0].isupper():  # Commence par majuscule (ex: Jean Paul)
+                score += 2
+            # Pas de caractères spéciaux
+            if text.replace('-', '').replace(' ', '').isalpha():
+                score += 1
+        
+        return score
+
+
+    def _extract_value_after_label(self, text, label_patterns, is_nom=True):
+        """
+        Extrait la valeur après un label détecté
+        """
+        for label_pattern in label_patterns:
+            # Patterns d'extraction
             patterns = [
-                rf'{label_pattern}\s*[:]\s*([A-Za-zÀ-ÿ\s\-]+)',
-                rf'{label_pattern}\s+([A-Za-zÀ-ÿ\s\-]+)',
-                rf'{label_pattern}\s*[:]\s*([A-ZÀ-Ÿ\s\-]+)',  # Pour NOM en majuscules
+                rf'{label_pattern}\s*[:]\s*([A-Za-zÀ-ÿ\s\-]+)',  # "NOM: Dupont"
+                rf'{label_pattern}\s+([A-Za-zÀ-ÿ\s\-]+)',         # "NOM Dupont"
             ]
             
             for pattern in patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
                     candidate = match.group(1).strip()
+                    
                     # Nettoyer
                     if is_nom:
                         candidate = re.sub(r'[^A-ZÀ-Ÿ\s\-]', '', candidate.upper()).strip()
                     else:
                         candidate = re.sub(r'[^A-Za-zÀ-ÿ\s\-]', '', candidate).strip()
+                    
                     candidate = re.sub(r'\s+', ' ', candidate)
                     
-                    if is_valid_name(candidate, is_nom=is_nom):
+                    # Limiter la longueur (prendre seulement les premiers mots)
+                    words = candidate.split()
+                    if len(words) > 3:
+                        candidate = ' '.join(words[:3])
+                    
+                    if self._is_valid_name_token(candidate, is_nom=is_nom):
                         return candidate
-            return None
         
-        # === STRATÉGIE 1 : Recherche par patterns globaux améliorés ===
-        for nom_label in NOM_LABELS:
-            if not nom:
-                candidate = extract_after_label(full_upper, nom_label, is_nom=True)
-                if candidate:
-                    nom = candidate
-                    print(f"✅ Nom trouvé via pattern global {nom_label}: {nom}")
+        return None
+
+
+
+    def extract_externe_fields(self, results, indexed):
+        """
+        Extraction optimisée du nom et prénom avec nettoyage des labels
+        """
+        nom = None
+        prenom = None
+        
+        # Filtrer résultats avec confiance >= 0.5
+        filtered_results = [r for r in results if r.get("confidence", 0) >= 0.5]
+        if not filtered_results:
+            filtered_results = results
+        
+        # ✅ Nettoyer chaque résultat des labels parasites
+        cleaned_results = []
+        for r in filtered_results:
+            cleaned_text = self._clean_label_noise(r["text"])
+            if cleaned_text:  # Garder seulement si non vide après nettoyage
+                cleaned_results.append({
+                    **r,
+                    "text": cleaned_text,
+                    "original_text": r["text"]  # Garder l'original pour debug
+                })
+        
+        # Labels pour NOM et PRENOM
+        NOM_LABELS = [r'N[OÔ]M\b', r'NAME\b', r'SURNAME\b']
+        PRENOM_LABELS = [r'PR[EÉ]N[OÔ]MS?\b', r'FIRST\s*NAME', r'GIVEN\s*NAME']
+        
+        # Trier verticalement puis horizontalement
+        sorted_results = sorted(cleaned_results, key=lambda r: (r["bbox"][0][1], r["bbox"][0][0]))
+        
+        # Texte complet
+        full_text = " ".join([r["text"] for r in sorted_results])
+        
+        print(f"🔍 Texte OCR nettoyé: {full_text[:200]}...")
+        print(f"📊 {len(sorted_results)} résultats après nettoyage")
+        
+        # ========================================
+        # STRATÉGIE 1 : Détecter structure "NOM PRENOM(S)"
+        # ========================================
+        # Pattern : MAJUSCULES suivi de mots capitalisés
+        #pattern_nom_prenoms = r'([A-ZÀ-Ÿ\-]+)\s+([A-Za-zÀ-ÿ\s\-]+)'
+        pattern_nom_prenoms = r'([A-ZÀ-Ÿ\-]+)\s+([A-ZÀ-ÿ\s\-]+)'  # Prénom peut être MAJUSCULE ou Capitalisé
+
+        for r in sorted_results[:5]:  # Chercher dans les 5 premières lignes
+            match = re.match(pattern_nom_prenoms, r["text"].strip())
+            if match and not nom and not prenom:
+                candidate_nom = match.group(1).strip()
+                candidate_prenoms = match.group(2).strip()
+                
+                if (self._is_valid_name_token(candidate_nom, is_nom=True) and
+                    self._is_valid_name_token(candidate_prenoms, is_nom=False)):
+                    nom = candidate_nom
+                    prenom = candidate_prenoms
+                    print(f"✅ Trouvé via pattern : Nom={nom}, Prénoms={prenom}")
                     break
         
-        for prenom_label in PRENOM_LABELS:
-            if not prenom:
-                candidate = extract_after_label(full_text, prenom_label, is_nom=False)
-                if candidate:
-                    prenom = candidate
-                    print(f"✅ Prénom trouvé via pattern global {prenom_label}: {prenom}")
-                    break
-        
-        # === STRATÉGIE 2 : Recherche ligne par ligne avec positions spatiales ===
+        # ========================================
+        # STRATÉGIE 2 : Recherche par position spatiale
+        # ========================================
         if not nom or not prenom:
-            nom_index = None
-            prenom_index = None
+            top_items = indexed.get('top_region', indexed.get('items', []))
             
+            # Nettoyer les items aussi
+            top_items_cleaned = []
+            for item in top_items:
+                cleaned = self._clean_label_noise(item['text'])
+                if cleaned and self._is_valid_name_token(cleaned):
+                    top_items_cleaned.append({
+                        **item,
+                        'text': cleaned
+                    })
+            
+            # Trier par position verticale puis score
+            candidates = []
+            for item in top_items_cleaned:
+                score = self._score_name_candidate(item, indexed['items'])
+                candidates.append({
+                    'text': item['text'],
+                    'score': score,
+                    'is_upper': item['text'].isupper(),
+                    'y': item['y']
+                })
+            
+            candidates.sort(key=lambda x: (x['y'], -x['score']))
+            
+            # Premier candidat en majuscules = NOM
+            if not nom:
+                for cand in candidates:
+                    if cand['is_upper']:
+                        nom = cand['text'].upper()
+                        print(f"✅ Nom (spatial): {nom}")
+                        break
+            
+            # ✅ CORRIGÉ : Candidat suivant (majuscules ou capitalisé) = PRENOM(S)
+            if not prenom:
+                for cand in candidates:
+                    if cand['text'] != nom:  # Juste différent du nom
+                        print(f"🔍 Test prénom spatial: '{cand['text']}'")
+                        if self._is_valid_name_token(cand['text'], is_nom=False):
+                            prenom = cand['text']
+                            print(f"✅ Prénom(s) (spatial): {prenom}")
+                            break
+        
+        # ========================================
+        # STRATÉGIE 3 : Ligne par ligne (fallback)
+        # ========================================
+        if not nom or not prenom:
             for i, r in enumerate(sorted_results):
                 txt = r["text"].strip()
-                upper = txt.upper()
-                y_pos = r["bbox"][0][1]  # Position Y (verticale)
                 
-                # Chercher label NOM
-                if not nom:
-                    for nom_label in NOM_LABELS:
-                        if re.search(nom_label, upper, re.IGNORECASE):
-                            nom_index = i
-                            # Extraire depuis la même ligne
-                            candidate = extract_after_label(txt, nom_label, is_nom=True)
-                            if candidate:
-                                nom = candidate
-                                print(f"✅ Nom trouvé ligne {i} via label: {nom}")
-                                break
-                            
-                            # Si rien sur la même ligne, chercher ligne suivante
-                            if i + 1 < len(sorted_results):
-                                next_r = sorted_results[i + 1]
-                                next_y = next_r["bbox"][0][1]
-                                # Vérifier que la ligne suivante est proche verticalement (max 50px)
-                                if abs(next_y - y_pos) < 50:
-                                    next_txt = next_r["text"].strip()
-                                    next_clean = re.sub(r'[^A-ZÀ-Ÿ\s\-]', '', next_txt.upper()).strip()
-                                    next_clean = re.sub(r'\s+', ' ', next_clean)
-                                    if is_valid_name(next_clean, is_nom=True):
-                                        nom = next_clean
-                                        print(f"✅ Nom trouvé ligne suivante {i+1}: {nom}")
-                                        break
+                # ✅ CORRIGÉ : Chercher NOM d'abord
+                if not nom and txt.isupper() and len(txt) >= 3:
+                    if self._is_valid_name_token(txt, is_nom=True):
+                        nom = txt
+                        print(f"✅ Nom (ligne {i}): {nom}")
                 
-                # Chercher label PRENOM
-                if not prenom:
-                    for prenom_label in PRENOM_LABELS:
-                        if re.search(prenom_label, upper, re.IGNORECASE):
-                            prenom_index = i
-                            # Extraire depuis la même ligne
-                            candidate = extract_after_label(txt, prenom_label, is_nom=False)
-                            if candidate:
-                                prenom = candidate
-                                print(f"✅ Prénom trouvé ligne {i} via label: {prenom}")
-                                break
+                # ✅ NOUVEAU : Si on a le NOM, chercher PRENOM juste après
+                if nom and not prenom:
+                    # Chercher dans les 3 lignes suivantes
+                    for j in range(i + 1, min(i + 4, len(sorted_results))):
+                        next_txt = sorted_results[j]["text"].strip()
+                        
+                        # ✅ Le prénom peut être en MAJUSCULES ou Capitalisé
+                        if len(next_txt) >= 3 and next_txt != nom:
+                            print(f"🔍 Test prénom candidat (ligne {j}): '{next_txt}'")
                             
-                            # Si rien sur la même ligne, chercher ligne suivante
-                            if i + 1 < len(sorted_results):
-                                next_r = sorted_results[i + 1]
-                                next_y = next_r["bbox"][0][1]
-                                # Vérifier que la ligne suivante est proche verticalement
-                                if abs(next_y - y_pos) < 50:
-                                    next_txt = next_r["text"].strip()
-                                    next_clean = re.sub(r'[^A-Za-zÀ-ÿ\s\-]', '', next_txt).strip()
-                                    next_clean = re.sub(r'\s+', ' ', next_clean)
-                                    if is_valid_name(next_clean, is_nom=False):
-                                        prenom = next_clean
-                                        print(f"✅ Prénom trouvé ligne suivante {i+1}: {prenom}")
-                                        break
-            
-            # Si on a trouvé NOM mais pas PRENOM (ou vice versa), chercher proche spatialement
-            if nom_index is not None and not prenom:
-                # Chercher PRENOM près du NOM (dans les 3 lignes suivantes)
-                for i in range(nom_index + 1, min(nom_index + 4, len(sorted_results))):
-                    r = sorted_results[i]
-                    txt = r["text"].strip()
-                    clean = re.sub(r'[^A-Za-zÀ-ÿ\s\-]', '', txt).strip()
-                    clean = re.sub(r'\s+', ' ', clean)
-                    if is_valid_name(clean, is_nom=False) and len(clean) >= 3:
-                        prenom = clean
-                        print(f"✅ Prénom trouvé près du NOM (ligne {i}): {prenom}")
-                        break
-            
-            if prenom_index is not None and not nom:
-                # Chercher NOM près du PRENOM (dans les 3 lignes précédentes ou suivantes)
-                for i in range(max(0, prenom_index - 3), min(prenom_index + 4, len(sorted_results))):
-                    if i == prenom_index:
-                        continue
-                    r = sorted_results[i]
-                    txt = r["text"].strip()
-                    clean = re.sub(r'[^A-ZÀ-Ÿ\s\-]', '', txt.upper()).strip()
-                    clean = re.sub(r'\s+', ' ', clean)
-                    if is_valid_name(clean, is_nom=True) and len(clean) >= 3:
-                        nom = clean
-                        print(f"✅ Nom trouvé près du PRENOM (ligne {i}): {nom}")
-                        break
-        
-        # === STRATÉGIE 3 : Détection de format "NOM PRENOM" sur une même ligne ===
-        if not nom or not prenom:
-            for r in sorted_results:
-                txt = r["text"].strip()
-                # Pattern pour "NOM PRENOM" ou "NOM, PRENOM" ou "NOM : PRENOM"
-                # Chercher deux mots/phrases séparés
-                parts = re.split(r'[,\s:]+', txt)
-                if len(parts) >= 2:
-                    # Premier élément comme NOM potentiel
-                    if not nom:
-                        candidate_nom = re.sub(r'[^A-ZÀ-Ÿ\s\-]', '', parts[0].upper()).strip()
-                        candidate_nom = re.sub(r'\s+', ' ', candidate_nom)
-                        if is_valid_name(candidate_nom, is_nom=True) and len(candidate_nom) >= 3:
-                            nom = candidate_nom
-                            print(f"✅ Nom trouvé via format combiné: {nom}")
+                            if self._is_valid_name_token(next_txt, is_nom=False):
+                                prenom = next_txt
+                                print(f"✅ Prénom(s) (ligne {j}): {prenom}")
+                                break
                     
-                    # Deuxième élément comme PRENOM potentiel
-                    if not prenom and len(parts) >= 2:
-                        candidate_prenom = re.sub(r'[^A-Za-zÀ-ÿ\s\-]', '', parts[1]).strip()
-                        candidate_prenom = re.sub(r'\s+', ' ', candidate_prenom)
-                        if is_valid_name(candidate_prenom, is_nom=False) and len(candidate_prenom) >= 3:
-                            prenom = candidate_prenom
-                            print(f"✅ Prénom trouvé via format combiné: {prenom}")
+                    # Si prénom trouvé, sortir de la boucle principale
+                    if prenom:
+                        break
         
-        # === STRATÉGIE 4 : Heuristique améliorée (dernier recours) ===
-        if not nom or not prenom:
-            print("⚠️ Stratégie heuristique activée")
-            
-            # Trier par confiance décroissante pour prioriser les résultats fiables
-            sorted_by_conf = sorted(filtered_results, key=lambda r: r.get("confidence", 0), reverse=True)
-            
-            for r in sorted_by_conf:
-                txt = r["text"].strip()
-                upper = txt.upper()
-                clean_upper = re.sub(r'[^A-ZÀ-Ÿ\s\-]', '', upper).strip()
-                clean_mixed = re.sub(r'[^A-Za-zÀ-ÿ\s\-]', '', txt).strip()
-                
-                # NOM : majuscules, pas de chiffres, pas de mots interdits
-                if (not nom and 
-                    len(clean_upper) >= 3 and 
-                    clean_upper.isupper() and
-                    is_valid_name(clean_upper, is_nom=True)):
-                    nom = clean_upper
-                    print(f"✅ Nom heuristique: {nom}")
-                
-                # PRENOM : casse mixte possible, pas de chiffres
-                if (not prenom and 
-                    len(clean_mixed) >= 3 and
-                    is_valid_name(clean_mixed, is_nom=False)):
-                    prenom = clean_mixed
-                    print(f"✅ Prénom heuristique: {prenom}")
-                
-                if nom and prenom:
-                    break
-        
-        # Normaliser les résultats finaux
+        # ========================================
+        # Normalisation finale
+        # ========================================
         if nom:
-            nom = ' '.join(nom.split())
-            nom = nom.upper()
+            nom = ' '.join(nom.split()).upper()
             # Validation finale
-            if not is_valid_name(nom, is_nom=True):
+            if not self._is_valid_name_token(nom, is_nom=True):
+                print(f"⚠️ Nom rejeté après validation: {nom}")
                 nom = None
         
         if prenom:
             prenom = ' '.join(prenom.split())
-            # Capitaliser proprement (première lettre de chaque mot)
-            prenom = ' '.join(word.capitalize() for word in prenom.split())
-            # Validation finale
-            if not is_valid_name(prenom, is_nom=False):
+            # Capitaliser chaque mot
+            #prenom = ' '.join(word.capitalize() for word in prenom.split())
+            if not self._is_valid_name_token(prenom, is_nom=False):
+                print(f"⚠️ Prénom rejeté après validation: {prenom}")
                 prenom = None
         
-        print(f"📝 Résultat final - Nom: {nom}, Prénom: {prenom}")
+        print(f"📝 RÉSULTAT FINAL - Nom: {nom}, Prénom(s): {prenom}")
         
         return {
             "nom": nom,
             "prenom": prenom
         }
-    
+        
 
     
+    def _clean_label_noise(self, text):
+        """
+        Supprime les labels OCR parasites (NOM:, PRÉNOM:, etc.)
+        """
+        # Labels à supprimer
+        labels_to_remove = [
+            r'\bN[OÔ]M\s*:?\s*',
+            r'\bPR[EÉ]N[OÔ]MS?\s*:?\s*',
+            r'\bNAME\s*:?\s*',
+            r'\bSURNAME\s*:?\s*',
+            r'\bFIRST\s*NAME\s*:?\s*',
+            r'\bLAST\s*NAME\s*:?\s*',
+            r'\bGIVEN\s*NAME\s*:?\s*',
+        ]
+        
+        cleaned = text
+        for pattern in labels_to_remove:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        # Nettoyer espaces multiples
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
+        return cleaned
+
+    def index_ocr_results(self, results):
+        """
+        Indexation spatiale OCR améliorée :
+        - normalise le texte
+        - calcule centre (x, y)
+        - groupe par lignes
+        - identifie la zone supérieure (prioritaire pour nom/prénom)
+        """
+        indexed = []
+        
+        if not results:
+            return {"items": [], "lines": [], "top_region": []}
+
+        for r in results:
+            bbox = r["bbox"]
+            x_vals = [p[0] for p in bbox]
+            y_vals = [p[1] for p in bbox]
+
+            x_center = sum(x_vals) / len(x_vals)
+            y_center = sum(y_vals) / len(y_vals)
+
+            indexed.append({
+                "text": r["text"],
+                "text_norm": clean_text_for_matching(r["text"]),
+                "confidence": r["confidence"],
+                "bbox": bbox,
+                "x": x_center,
+                "y": y_center
+            })
+
+        # Trier top → bottom puis left → right
+        indexed.sort(key=lambda i: (i["y"], i["x"]))
+
+        # Grouper par lignes (tolérance verticale)
+        lines = []
+        line_tol = 18  # pixels
+
+        for item in indexed:
+            placed = False
+            for line in lines:
+                if abs(line[0]["y"] - item["y"]) < line_tol:
+                    line.append(item)
+                    placed = True
+                    break
+            if not placed:
+                lines.append([item])
+
+        # Trier chaque ligne gauche → droite
+        for line in lines:
+            line.sort(key=lambda i: i["x"])
+
+        # ✅ NOUVEAU : Identifier la zone supérieure (35% du haut)
+        if indexed:
+            max_y = max(item['y'] for item in indexed)
+            threshold_y = max_y * 0.35
+            top_region = [item for item in indexed if item['y'] <= threshold_y]
+        else:
+            top_region = []
+
+        return {
+            "items": indexed,
+            "lines": lines,
+            "top_region": top_region  # ✅ Zone prioritaire
+        }

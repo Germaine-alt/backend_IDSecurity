@@ -1,8 +1,9 @@
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from config.database import db
+from models.utilisateur import Utilisateur
 from services.utilisateur_service import UtilisateurService
 from flask import jsonify, request
 import re
-
 
 @jwt_required()
 def register():
@@ -19,8 +20,6 @@ def register():
         "message": "Utilisateur créé avec succès",
         "user": user.to_dict()
     }), 201
-
-
 
 def login():
     data = request.get_json()
@@ -42,6 +41,8 @@ def login():
         }
     )
 
+    # parametres = ParametreService.get_parametres(user.id)
+
     
     return jsonify({
         "message": "Connexion réussie",
@@ -57,7 +58,11 @@ def login():
                     "id": user.role.id,
                     "libelle": user.role.libelle,
                     "permissions": user.role.permissions
-            } if user.role else None        
+            } if user.role else None
+
+            # "parametres": parametres.to_dict() if parametres else None
+        
+
         }
     }), 200
 
@@ -79,7 +84,8 @@ def get_current_user():
     if not user:
         return jsonify({"message": "Utilisateur non trouvé"}), 404
 
-    
+    # parametres = ParametreService.get_parametres(user_id)
+
     return jsonify({
         "id": user.id,
         "nom": user.nom,
@@ -89,6 +95,8 @@ def get_current_user():
         "poste": user.poste,
         "is_active": user.is_active,
         "role_id": user.role_id
+        # "parametres": parametres.to_dict() if parametres else None
+
     }), 200
 
 
@@ -179,3 +187,7 @@ def reinitialiser_mot_de_passe(user_id):
         "message": "Mot de passe réinitialisé avec succès",
         "mot_passe_temporaire": mot_passe_temp
     }), 200
+
+
+
+

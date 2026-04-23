@@ -20,7 +20,11 @@ from flask_cors import CORS
 from flask_migrate import Migrate
 from flask_mail import Mail
 from extensions import mail
+from datetime import timedelta 
+from dotenv import load_dotenv
 import os
+
+load_dotenv()
 
 #**********************************************************************************************************************
 def create_initial_admin():
@@ -59,7 +63,9 @@ CORS(app)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+mysqlconnector://root:92583865@localhost:3306/idsecurity"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["JWT_SECRET_KEY"] = "73e1d1e862c5475a06d587304c0dad516afc17679ab7b45b25965893c828fe98"
+
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")          
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=8)          
 
 db.init_app(app)
 migrate = Migrate(app, db)
@@ -70,9 +76,9 @@ app.config.update(
     MAIL_SERVER="smtp.gmail.com",
     MAIL_PORT=587,
     MAIL_USE_TLS=True,
-    MAIL_USERNAME="tchallaafigermaine@gmail.com",
-    MAIL_PASSWORD="nylixsuwvsdpdice",
-    MAIL_DEFAULT_SENDER=("IDSecurity", "tchallaafigermaine@gmail.com")
+    MAIL_USERNAME=os.getenv("MAIL_USERNAME"),                         
+    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD"),                         
+    MAIL_DEFAULT_SENDER=("IDSecurity", os.getenv("MAIL_USERNAME"))
 )
 mail.init_app(app)
 #**************************************************************************************************************************
@@ -87,6 +93,7 @@ app.register_blueprint(admin_bp, url_prefix="/api/admin")
 app.register_blueprint(face_bp, url_prefix="/api/face")
 app.register_blueprint(ocr_bp, url_prefix="/api/ocr")
 app.register_blueprint(notification_bp, url_prefix='/api/notifications')
+
 
 @app.route("/api/uploads/<path:filename>")
 def images(filename):

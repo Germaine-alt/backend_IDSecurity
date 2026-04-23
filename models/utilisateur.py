@@ -16,6 +16,7 @@ class Utilisateur(db.Model):
     role_id = Column(Integer, ForeignKey("roles.id"))
     lieu_id = Column(Integer, ForeignKey("lieux.id"))
 
+
     lieu = relationship("Lieu", back_populates="utilisateurs")
     role = relationship("Role", back_populates="utilisateurs")
     verifications = relationship("Verification", back_populates="utilisateur")
